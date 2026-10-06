@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1000</width>
+    <height>660</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>RetroKart 3D - Computer Graphics Engine</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">
+    QMainWindow { background-color: #1e1e24; color: #f0f0f0; }
+    QGroupBox { font-weight: bold; border: 2px solid #3d3d4a; border-radius: 6px; margin-top: 10px; padding-top: 10px; color: #ffcc00; }
+    QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 10px; padding: 0 4px; }
+    QPushButton { background-color: #2e303e; color: #ffffff; border: 1px solid #4f526b; border-radius: 4px; padding: 6px 12px; font-weight: bold; }
+    QPushButton:hover { background-color: #3f4258; border-color: #ffcc00; }
+    QPushButton:pressed { background-color: #ffcc00; color: #1e1e24; }
+    QLabel { color: #e0e0e0; font-size: 11pt; }
+   </string>
+  </property>
+  <widget class="QWidget" name="centralWidget">
+   <layout class="QHBoxLayout" name="horizontalLayout">
+    <property name="spacing">
+     <number>12</number>
+    </property>
+    <property name="leftMargin">
+     <number>12</number>
+    </property>
+    <property name="topMargin">
+     <number>12</number>
+    </property>
+    <property name="rightMargin">
+     <number>12</number>
+    </property>
+    <property name="bottomMargin">
+     <number>12</number>
+    </property>
+    <item>
+     <widget class="QWidget" name="canvasContainer" native="true">
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+        <horstretch>3</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">background-color: #000000; border: 2px solid #555566; border-radius: 4px;</string>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QWidget" name="controlPanel" native="true">
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+        <horstretch>1</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
+      </property>
+      <property name="minimumSize">
+       <size>
+        <width>260</width>
+        <height>0</height>
+       </size>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayout">
+       <item>
+        <widget class="QLabel" name="titleLabel">
+         <property name="font">
+          <font>
+           <pointsize>15</pointsize>
+           <bold>true</bold>
+          </font>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">color: #ffcc00; margin-bottom: 6px;</string>
+         </property>
+         <property name="text">
+          <string>🏎️ RETRO KART 3D</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="groupLevels">
+         <property name="title">
+          <string>Select Track Level</string>
+         </property>
+         <layout class="QVBoxLayout" name="levelLayout">
+          <item>
+           <widget class="QPushButton" name="btnLevel1">
+            <property name="text">
+             <string>Level 1: Donut Plains (Easy)</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnLevel2">
+            <property name="text">
+             <string>Level 2: Choco Valley (Med)</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnLevel3">
+            <property name="text">
+             <string>Level 3: Bowser's Castle (Hard)</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="groupTelemetry">
+         <property name="title">
+          <string>Telemetry &amp; Engine Stats</string>
+         </property>
+         <layout class="QVBoxLayout" name="telemetryLayout">
+          <item>
+           <widget class="QLabel" name="lblSpeed">
+            <property name="text">
+             <string>Speed: 0.0 km/h</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="lblSurface">
+            <property name="text">
+             <string>Surface: Tarmac</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="lblLap">
+            <property name="text">
+             <string>Lap: 1 / 3</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="lblPos">
+            <property name="text">
+             <string>Pos: (512, 200)</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="lblHeading">
+            <property name="text">
+             <string>Heading: 90°</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="groupControls">
+         <property name="title">
+          <string>Controls</string>
+         </property>
+         <layout class="QVBoxLayout" name="controlsLayout">
+          <item>
+           <widget class="QLabel" name="lblCtrlHelp">
+            <property name="text">
+             <string>• W / Up : Accelerate
+• S / Down : Brake / Reverse
+• A / Left : Steer Left
+• D / Right : Steer Right
+• R : Reset Kart</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnReset">
+            <property name="text">
+             <string>↺ Reset Kart (R)</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

@@ -1,0 +1,20 @@
+# Qt Creator and build artifacts
+*.user
+*.user.*
+.qmake.stash
+.qtc_clangd/
+build/
+build-*/
+debug/
+release/
+Makefile*
+*.o
+*.obj
+*.exe
+*.a
+*.dll
+
+# OS files
+Thumbs.db
+[Dd]esktop.ini
+.DS_Store
