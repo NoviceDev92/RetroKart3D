@@ -72,9 +72,9 @@ private:
     std::vector<WorldSprite> worldSprites;
 
     // Kart state
-    double kartX = 512.0;
+    double kartX = 470.0;
     double kartZ = 200.0;
-    double kartAngle = 0.0;     // radians
+    double kartAngle = 0.0;     // radians: 0 points East along starting straight
     double kartSpeed = 0.0;
     double maxSpeed = 160.0;
     double accel = 110.0;

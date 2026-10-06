@@ -46,9 +46,14 @@ void GameCanvas::setTrackLevel(TrackLevel level)
 
 void GameCanvas::resetKart()
 {
-    kartX = 512.0;
-    kartZ = 200.0;
-    kartAngle = M_PI / 2.0; // Facing east along starting straight
+    if (currentLevel == TrackLevel::BOWSER_CASTLE) {
+        kartX = 470.0;
+        kartZ = 250.0;
+    } else {
+        kartX = 470.0;
+        kartZ = 200.0;
+    }
+    kartAngle = 0.0; // Pointing forward along the track (East) through the start line
     kartSpeed = 0.0;
     steeringVisualAngle = 0.0;
     currentLap = 1;
@@ -230,7 +235,7 @@ void GameCanvas::generateBowserCastle()
     maskPainter.end();
 
     worldSprites.clear();
-    worldSprites.push_back({ 500.0, 250.0, 0.0, SpriteType::QUESTION_BOX, true });
+    worldSprites.push_back({ 580.0, 250.0, 0.0, SpriteType::QUESTION_BOX, true });
     worldSprites.push_back({ 780.0, 400.0, 0.0, SpriteType::GREEN_PIPE, true });
     worldSprites.push_back({ 650.0, 550.0, 0.0, SpriteType::QUESTION_BOX, true });
     worldSprites.push_back({ 400.0, 780.0, 0.0, SpriteType::QUESTION_BOX, true });
@@ -407,8 +412,8 @@ void GameCanvas::renderGroundMode7()
             double xGround = dx * scaleGround;
 
             // Rotate ground offset by kart angle & translate by kart position
-            double u = kartX + xGround * sinA + zGround * cosA;
-            double v = kartZ - xGround * cosA + zGround * sinA;
+            double u = kartX - xGround * sinA + zGround * cosA;
+            double v = kartZ + xGround * cosA + zGround * sinA;
 
             int mapU = (static_cast<int>(u) % TRACK_MAP_SIZE + TRACK_MAP_SIZE) % TRACK_MAP_SIZE;
             int mapV = (static_cast<int>(v) % TRACK_MAP_SIZE + TRACK_MAP_SIZE) % TRACK_MAP_SIZE;
