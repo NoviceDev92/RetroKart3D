@@ -3,6 +3,7 @@
 #include <QPainterPath>
 #include <QKeyEvent>
 #include <QFont>
+#include <QRandomGenerator>
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -70,8 +71,9 @@ void GameCanvas::resetKart()
     spinTimer = 0.0;
     inkTimer = 0.0;
 
-    // Reset celebration state
+    // Reset celebration & race finish state
     isCelebrationActive = false;
+    isRaceFinished = false;
     celebrationTimer = 0.0;
     flashIntensity = 0.0;
     hasPassedHalfway = false;
@@ -247,7 +249,10 @@ void GameCanvas::generateBowserCastle()
     QPainter visPainter(&trackVisualMap);
     QPainter maskPainter(&trackMaskMap);
 
-    // Castle Stone Raceway with 90 degree turns
+    visPainter.setRenderHint(QPainter::Antialiasing, true);
+    maskPainter.setRenderHint(QPainter::Antialiasing, true);
+
+    // Castle Stone Raceway with smoothly rounded corners
     QPolygon castlePoly;
     castlePoly << QPoint(250, 250)
                << QPoint(780, 250)
@@ -256,35 +261,45 @@ void GameCanvas::generateBowserCastle()
                << QPoint(550, 780)
                << QPoint(250, 780);
 
-    QPen stoneBorder(QColor(40, 40, 45), 52, Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin);
+    // Wide Stone Curb / Shoulder (slows down safely, protects against lava)
+    QPen stoneBorder(QColor(48, 50, 58), 96, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
     visPainter.setPen(stoneBorder);
     visPainter.drawPolygon(castlePoly);
 
-    QPen stoneRoad(QColor(70, 72, 80), 40, Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin);
+    // Mask for Curb: Green (Offroad - safe buffer zone)
+    QPen maskCurb(QColor(0, 255, 0), 96, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    maskPainter.setPen(maskCurb);
+    maskPainter.drawPolygon(castlePoly);
+
+    // Wide Tarmac Stone Raceway (74px wide - plenty of room to overtake and avoid obstacles)
+    QPen stoneRoad(QColor(76, 78, 88), 74, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
     visPainter.setPen(stoneRoad);
     visPainter.drawPolygon(castlePoly);
 
-    QPen maskRoad(QColor(255, 255, 255), 40, Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin);
+    // Mask for Road: White (Full speed)
+    QPen maskRoad(QColor(255, 255, 255), 74, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
     maskPainter.setPen(maskRoad);
     maskPainter.drawPolygon(castlePoly);
 
-    // Finish line
+    // Finish line across the wider raceway
     visPainter.setPen(Qt::NoPen);
     visPainter.setBrush(QColor(255, 255, 255));
-    visPainter.drawRect(510, 230, 8, 40);
+    visPainter.drawRect(510, 210, 8, 80);
 
     maskPainter.setPen(QPen(QColor(255, 255, 0), 8));
-    maskPainter.drawLine(512, 230, 512, 270);
+    maskPainter.drawLine(512, 210, 512, 290);
 
     visPainter.end();
     maskPainter.end();
 
     worldSprites.clear();
     worldSprites.push_back({ 580.0, 250.0, 0.0, SpriteType::QUESTION_BOX, true, 0.0 });
-    worldSprites.push_back({ 780.0, 400.0, 0.0, SpriteType::THWOMP, true, 0.0 });
+    // Thwomp placed on the outer right lane (X=810), leaving the middle and inner lane wide open!
+    worldSprites.push_back({ 810.0, 400.0, 0.0, SpriteType::THWOMP, true, 0.0 });
     worldSprites.push_back({ 650.0, 550.0, 0.0, SpriteType::QUESTION_BOX, true, 0.0 });
     worldSprites.push_back({ 400.0, 780.0, 0.0, SpriteType::QUESTION_BOX, true, 0.0 });
-    worldSprites.push_back({ 250.0, 600.0, 0.0, SpriteType::GREEN_PIPE, true, 0.0 });
+    // Green Pipe placed along the outer corner
+    worldSprites.push_back({ 215.0, 600.0, 0.0, SpriteType::GREEN_PIPE, true, 0.0 });
     worldSprites.push_back({ 350.0, 250.0, 0.0, SpriteType::COIN, true, 0.0 });
 }
 
@@ -316,6 +331,15 @@ void GameCanvas::updateGameLoop()
 
 void GameCanvas::updatePhysics(double dt)
 {
+    // Handle race finish status - coast to a stop and lock controls
+    if (isRaceFinished) {
+        kartSpeed = std::max(0.0, kartSpeed - 55.0 * dt);
+        kartX += kartSpeed * std::cos(kartAngle) * dt;
+        kartZ += kartSpeed * std::sin(kartAngle) * dt;
+        currentSurfaceName = "🏆 RACE FINISHED! (PRESS R TO RESTART)";
+        return;
+    }
+
     // Handle spinout status
     if (isSpinning) {
         kartAngle += 15.0 * dt;
@@ -344,15 +368,21 @@ void GameCanvas::updatePhysics(double dt)
     if (qRed(maskColor) == 255 && qGreen(maskColor) == 255 && qBlue(maskColor) == 255) {
         currentSurfaceName = (mushroomBoostTimer > 0.0) ? "Road (BOOST ACTIVE!)" : "Road (Tarmac)";
     } else if (qRed(maskColor) == 255 && qBlue(maskColor) == 255) {
-        // Lava!
-        currentSurfaceName = "LAVA! (Resetting)";
-        resetKart();
+        // Lava Hazard: bounce back onto track, spin briefly and lose speed without wiping your lap!
+        currentSurfaceName = "LAVA RECOIL! (Sizzle)";
+        kartSpeed = std::max(0.0, kartSpeed * 0.35);
+        // Push kart back away from lava toward track
+        kartX -= std::cos(kartAngle) * 8.0;
+        kartZ -= std::sin(kartAngle) * 8.0;
+        isSpinning = true;
+        spinTimer = 0.45;
+        flashIntensity = 0.5; // Warning flash
         return;
     } else if (qGreen(maskColor) == 255 && qRed(maskColor) == 0) {
-        currentSurfaceName = "Off-road (Grass/Sand)";
+        currentSurfaceName = (currentLevel == TrackLevel::BOWSER_CASTLE) ? "Stone Curb (Shoulder)" : "Off-road (Grass/Sand)";
         if (mushroomBoostTimer <= 0.0) {
-            currentMaxSpeed *= 0.45;
-            currentDrag *= 3.0;
+            currentMaxSpeed *= (currentLevel == TrackLevel::BOWSER_CASTLE) ? 0.70 : 0.45;
+            currentDrag *= 2.2;
         }
     } else if (qRed(maskColor) == 255 && qGreen(maskColor) == 255 && qBlue(maskColor) == 0) {
         currentSurfaceName = "Start / Finish Line";
@@ -382,13 +412,13 @@ void GameCanvas::updatePhysics(double dt)
         }
     }
 
-    // Steering
+    // Steering - responsive at both high and low speeds (tight cornering)
     double steerDirection = 0.0;
     if (left) steerDirection -= 1.0;
     if (right) steerDirection += 1.0;
 
-    double steerSpeedFactor = std::abs(kartSpeed) / maxSpeed;
-    kartAngle += steerDirection * turnRate * steerSpeedFactor * dt;
+    double steerSpeedFactor = (std::abs(kartSpeed) > 1.0) ? std::clamp(std::abs(kartSpeed) / 50.0, 0.70, 1.30) : 0.0;
+    kartAngle += steerDirection * 3.4 * steerSpeedFactor * dt;
 
     // Cockpit wheel animation lerp
     double targetWheelAngle = steerDirection * 0.35;
@@ -410,8 +440,8 @@ void GameCanvas::updatePhysics(double dt)
     }
 
     // Finish line crossing detection: crossing X = 512.0 moving forward (East)
-    double trackZMin = (currentLevel == TrackLevel::BOWSER_CASTLE) ? 190.0 : 140.0;
-    double trackZMax = (currentLevel == TrackLevel::BOWSER_CASTLE) ? 310.0 : 260.0;
+    double trackZMin = (currentLevel == TrackLevel::BOWSER_CASTLE) ? 180.0 : 140.0;
+    double trackZMax = (currentLevel == TrackLevel::BOWSER_CASTLE) ? 320.0 : 260.0;
 
     bool crossingFinishLine = (oldX < 512.0 && kartX >= 512.0 && kartZ >= trackZMin && kartZ <= trackZMax);
 
@@ -427,8 +457,9 @@ void GameCanvas::updatePhysics(double dt)
             } else if (currentLap == 3) {
                 triggerCelebration("🔥 FINAL LAP! 🔥", "MAX SPEED!");
             } else if (currentLap > 3) {
-                triggerCelebration("🏁 VICTORY! 🏁", "COURSE CLEAR!");
                 currentLap = 3;
+                isRaceFinished = true;
+                triggerCelebration("🏁 1ST PLACE - VICTORY! 🏁", "COURSE CLEAR! PRESS [R] TO REPLAY");
             }
         }
     }
@@ -440,7 +471,10 @@ void GameCanvas::updatePhysics(double dt)
         double dz = kartZ - sprite.z;
         double distSq = dx * dx + dz * dz;
 
-        if (distSq < 20.0 * 20.0) {
+        // Obstacles have a precise, smaller hitbox (11 units) so they are easy to bypass
+        double hitRadius = (sprite.type == SpriteType::THWOMP || sprite.type == SpriteType::GREEN_PIPE) ? 11.0 : 18.0;
+
+        if (distSq < hitRadius * hitRadius) {
             if (sprite.type == SpriteType::QUESTION_BOX) {
                 sprite.active = false;
                 sprite.respawnTimer = 7.0; // Respawns after 7 seconds
@@ -458,9 +492,9 @@ void GameCanvas::updatePhysics(double dt)
                 kartSpeed *= 0.35;
             } else if (sprite.type == SpriteType::GREEN_PIPE || sprite.type == SpriteType::THWOMP) {
                 // Solid obstacle collision bounce
-                kartSpeed = -40.0;
-                kartX -= std::cos(kartAngle) * 6.0;
-                kartZ -= std::sin(kartAngle) * 6.0;
+                kartSpeed = -30.0;
+                kartX -= std::cos(kartAngle) * 5.0;
+                kartZ -= std::sin(kartAngle) * 5.0;
             } else if (sprite.type == SpriteType::MUSHROOM) {
                 sprite.active = false;
                 mushroomBoostTimer = 2.8;
@@ -508,12 +542,13 @@ void GameCanvas::updateItemSystem(double dt)
     // Item Roulette Animation
     if (isRouletteActive) {
         rouletteTimer += dt;
-        // Fast cycling that slows down slightly toward completion
-        rouletteIndex = static_cast<int>(rouletteTimer * 12.0) % 5;
+        // Fast cycling animation through all items
+        rouletteIndex = static_cast<int>(rouletteTimer * 14.0) % 5;
 
         if (rouletteTimer >= rouletteDuration) {
             isRouletteActive = false;
-            heldItem = spriteToPlayerItem(rouletteItemAt(rouletteIndex));
+            // Land precisely on the truly randomized item
+            heldItem = spriteToPlayerItem(rouletteItemAt(targetItemIndex));
         }
     }
 }
@@ -524,7 +559,10 @@ void GameCanvas::startItemRoulette()
     isRouletteActive = true;
     rouletteTimer = 0.0;
     rouletteDuration = 1.8;
-    rouletteIndex = rand() % 5;
+    // Pick uniformly at random from all 5 powerups:
+    // 0: Mushroom, 1: Rocket, 2: Banana, 3: Green Shell, 4: Ink Blooper
+    targetItemIndex = QRandomGenerator::global()->bounded(5);
+    rouletteIndex = QRandomGenerator::global()->bounded(5);
     heldItem = PlayerItem::NONE;
 }
 
@@ -720,8 +758,9 @@ void GameCanvas::renderSprites()
         int groundY = static_cast<int>(HORIZON_Y + (focalLength * cameraHeight) / camZ);
 
         double scale = focalLength / camZ;
-        int drawW = static_cast<int>(20.0 * scale);
-        int drawH = static_cast<int>(20.0 * scale);
+        double baseSize = (sprite.type == SpriteType::THWOMP) ? 15.0 : 20.0;
+        int drawW = static_cast<int>(baseSize * scale);
+        int drawH = static_cast<int>(baseSize * scale);
 
         if (drawW <= 1 || drawH <= 1) continue;
 
@@ -1046,9 +1085,16 @@ void GameCanvas::updateCelebration(double dt)
         p.angle += p.vRot * dt;
     }
 
-    if (celebrationTimer >= celebrationDuration) {
-        isCelebrationActive = false;
-        confetti.clear();
+    if (isRaceFinished) {
+        // Keep victory banner active and looping when game is won
+        if (celebrationTimer >= celebrationDuration - 0.4) {
+            celebrationTimer = 0.5;
+        }
+    } else {
+        if (celebrationTimer >= celebrationDuration) {
+            isCelebrationActive = false;
+            confetti.clear();
+        }
     }
 }
 

@@ -108,6 +108,7 @@ private:
     double rouletteTimer = 0.0;
     double rouletteDuration = 2.0;
     int rouletteIndex = 0;
+    int targetItemIndex = 0;
     double rouletteSpeed = 0.0;
 
     // Item effect timers
@@ -127,6 +128,7 @@ private:
     };
 
     bool isCelebrationActive = false;
+    bool isRaceFinished = false;
     double celebrationTimer = 0.0;
     double celebrationDuration = 3.6;
     QString celebrationTitle = "LAP COMPLETE!";
