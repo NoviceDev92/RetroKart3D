@@ -175,7 +175,15 @@
 • S / Down : Brake / Reverse
 • A / Left : Steer Left
 • D / Right : Steer Right
+• F : Finish Anim
 • R : Reset Kart</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnCelebration">
+            <property name="text">
+             <string>🎉 Finish Line Anim (F)</string>
             </property>
            </widget>
           </item>

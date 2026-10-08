@@ -21,6 +21,7 @@ private slots:
     void on_btnLevel2_clicked();
     void on_btnLevel3_clicked();
     void on_btnReset_clicked();
+    void on_btnCelebration_clicked();
     void onStatsUpdated(double speed, int lap, double x, double z, double angle, QString surface);
 
 private:

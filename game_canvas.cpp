@@ -2,8 +2,10 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QKeyEvent>
+#include <QFont>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -58,6 +60,14 @@ void GameCanvas::resetKart()
     steeringVisualAngle = 0.0;
     currentLap = 1;
     nextCheckpoint = 1;
+
+    // Reset celebration state
+    isCelebrationActive = false;
+    celebrationTimer = 0.0;
+    flashIntensity = 0.0;
+    hasPassedHalfway = false;
+    firstStartCrossed = false;
+    confetti.clear();
 }
 
 void GameCanvas::focusInEvent(QFocusEvent *event)
@@ -70,6 +80,8 @@ void GameCanvas::keyPressEvent(QKeyEvent *event)
     pressedKeys.insert(event->key());
     if (event->key() == Qt::Key_R) {
         resetKart();
+    } else if (event->key() == Qt::Key_F) {
+        triggerCelebration("★ FINISH! ★", "COURSE CLEAR!");
     }
 }
 
@@ -251,10 +263,13 @@ void GameCanvas::updateGameLoop()
     if (dt > 0.05) dt = 0.05; // clamp delta time for stability
 
     updatePhysics(dt);
+    updateCelebration(dt);
+
     renderSky();
     renderGroundMode7();
     renderSprites();
     renderCockpit();
+    renderCelebration();
 
     emit statsUpdated(kartSpeed, currentLap, kartX, kartZ, kartAngle * (180.0 / M_PI), currentSurfaceName);
 
@@ -326,9 +341,40 @@ void GameCanvas::updatePhysics(double dt)
     while (kartAngle >= 2.0 * M_PI) kartAngle -= 2.0 * M_PI;
     while (kartAngle < 0.0) kartAngle += 2.0 * M_PI;
 
+    double oldX = kartX;
+
     // Integrate position (heading angle: 0 points East along X, PI/2 points South along Z)
     kartX += kartSpeed * std::cos(kartAngle) * dt;
     kartZ += kartSpeed * std::sin(kartAngle) * dt;
+
+    // Halfway checkpoint detection: opposite side of the track (Z > 650)
+    if (kartZ > 650.0) {
+        hasPassedHalfway = true;
+    }
+
+    // Finish line crossing detection: crossing X = 512.0 moving forward (East)
+    double trackZMin = (currentLevel == TrackLevel::BOWSER_CASTLE) ? 190.0 : 140.0;
+    double trackZMax = (currentLevel == TrackLevel::BOWSER_CASTLE) ? 310.0 : 260.0;
+
+    bool crossingFinishLine = (oldX < 512.0 && kartX >= 512.0 && kartZ >= trackZMin && kartZ <= trackZMax);
+
+    if (crossingFinishLine) {
+        if (!firstStartCrossed) {
+            firstStartCrossed = true;
+            triggerCelebration("RACE START!", "GO GO GO!");
+        } else if (hasPassedHalfway) {
+            hasPassedHalfway = false;
+            currentLap++;
+            if (currentLap == 2) {
+                triggerCelebration("★ LAP 2 ★", "SPEED UP!");
+            } else if (currentLap == 3) {
+                triggerCelebration("🔥 FINAL LAP! 🔥", "MAX SPEED!");
+            } else if (currentLap > 3) {
+                triggerCelebration("🏁 VICTORY! 🏁", "COURSE CLEAR!");
+                currentLap = 3;
+            }
+        }
+    }
 
     // Sprite collection collision
     for (auto &sprite : worldSprites) {
@@ -549,4 +595,176 @@ void GameCanvas::paintEvent(QPaintEvent *)
     // Nearest-neighbor scaling to maintain authentic pixel graphics
     painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
     painter.drawImage(rect(), screenBuffer);
+}
+
+// -------------------------------------------------------------
+// CELEBRATION & FINISH ANIMATION
+// -------------------------------------------------------------
+
+void GameCanvas::triggerCelebration(const QString &title, const QString &subtitle)
+{
+    isCelebrationActive = true;
+    celebrationTimer = 0.0;
+    celebrationTitle = title;
+    celebrationSubtitle = subtitle;
+    flashIntensity = 0.85;
+
+    // Generate 120 confetti particles bursting from both bottom corners
+    confetti.clear();
+    const QColor colors[] = {
+        QColor(255, 50, 50),   // Red
+        QColor(255, 215, 0),   // Gold
+        QColor(0, 230, 255),   // Cyan
+        QColor(60, 255, 100),  // Green
+        QColor(255, 105, 180), // Pink
+        QColor(255, 255, 255), // Pure White
+        QColor(180, 80, 255),  // Purple
+        QColor(255, 140, 0)    // Orange
+    };
+    int numColors = sizeof(colors) / sizeof(colors[0]);
+
+    for (int i = 0; i < 120; ++i) {
+        ConfettiParticle p;
+        bool leftSide = (i % 2 == 0);
+        p.x = leftSide ? (rand() % 40) : (BUFFER_WIDTH - (rand() % 40));
+        p.y = BUFFER_HEIGHT - 20 - (rand() % 50);
+
+        double launchAngle = leftSide
+            ? (-(35.0 + (rand() % 45)) * M_PI / 180.0)
+            : (-(180.0 - (35.0 + (rand() % 45))) * M_PI / 180.0);
+
+        double speed = 180.0 + (rand() % 160);
+        p.vx = std::cos(launchAngle) * speed;
+        p.vy = std::sin(launchAngle) * speed;
+        p.w = 4.0 + (rand() % 4);
+        p.h = 2.5 + (rand() % 4);
+        p.angle = (rand() % 360) * M_PI / 180.0;
+        p.vRot = ((rand() % 240) - 120) * M_PI / 180.0;
+        p.color = colors[rand() % numColors];
+        confetti.push_back(p);
+    }
+}
+
+void GameCanvas::updateCelebration(double dt)
+{
+    if (!isCelebrationActive) return;
+
+    celebrationTimer += dt;
+    flashIntensity = std::max(0.0, flashIntensity - dt * 2.8);
+
+    // Gravity and physics on confetti
+    for (auto &p : confetti) {
+        p.vy += 160.0 * dt; // gravity
+        p.vx *= 0.985;      // air resistance
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.angle += p.vRot * dt;
+    }
+
+    if (celebrationTimer >= celebrationDuration) {
+        isCelebrationActive = false;
+        confetti.clear();
+    }
+}
+
+void GameCanvas::renderCelebration()
+{
+    if (!isCelebrationActive) return;
+
+    // 1. Screen Golden Flash
+    if (flashIntensity > 0.02) {
+        QRgb *pixels = reinterpret_cast<QRgb*>(screenBuffer.bits());
+        int boost = static_cast<int>(flashIntensity * 130);
+        for (int i = 0; i < BUFFER_WIDTH * BUFFER_HEIGHT; ++i) {
+            int r = qMin(255, qRed(pixels[i]) + boost);
+            int g = qMin(255, qGreen(pixels[i]) + boost);
+            int b = qMin(255, qBlue(pixels[i]) + (boost / 3));
+            pixels[i] = qRgb(r, g, b);
+        }
+    }
+
+    QPainter painter(&screenBuffer);
+    painter.setRenderHint(QPainter::Antialiasing, false);
+
+    // 2. Render Confetti Particles
+    for (const auto &p : confetti) {
+        if (p.x < -10 || p.x > BUFFER_WIDTH + 10 || p.y > BUFFER_HEIGHT + 10) continue;
+        painter.save();
+        painter.translate(p.x, p.y);
+        painter.rotate(p.angle * 180.0 / M_PI);
+        painter.setPen(QPen(QColor(15, 15, 15), 1));
+        painter.setBrush(p.color);
+        painter.drawRect(QRectF(-p.w / 2.0, -p.h / 2.0, p.w, p.h));
+        painter.restore();
+    }
+
+    // 3. Top Checkered Flag Ribbon
+    int squareSize = 7;
+    int scrollOffset = static_cast<int>(celebrationTimer * 30.0) % (squareSize * 2);
+
+    for (int x = -squareSize * 2; x < BUFFER_WIDTH + squareSize * 2; x += squareSize) {
+        for (int row = 0; row < 2; ++row) {
+            int drawX = x + scrollOffset;
+            int drawY = 8 + row * squareSize;
+            bool isWhite = ((x / squareSize + row) % 2 == 0);
+            painter.fillRect(drawX, drawY, squareSize, squareSize, isWhite ? QColor(250, 250, 255) : QColor(20, 20, 25));
+        }
+    }
+    // Gold borders for ribbon
+    painter.setPen(QColor(255, 215, 0));
+    painter.drawLine(0, 7, BUFFER_WIDTH, 7);
+    painter.drawLine(0, 8 + 2 * squareSize, BUFFER_WIDTH, 8 + 2 * squareSize);
+
+    // 4. Retro Center Banner with Pop-in Elastic Scaling
+    double scale = 1.0;
+    if (celebrationTimer < 0.25) {
+        scale = celebrationTimer / 0.25; // Elastic zoom in
+    } else {
+        scale = 1.0 + 0.04 * std::sin((celebrationTimer - 0.25) * 8.0); // Heartbeat pulse
+    }
+
+    painter.save();
+    painter.translate(BUFFER_WIDTH / 2, 85);
+    painter.scale(scale, scale);
+
+    int bannerW = 280;
+    int bannerH = 68;
+    QRect bannerRect(-bannerW / 2, -bannerH / 2, bannerW, bannerH);
+
+    // Banner background with thick arcade border
+    painter.setPen(QPen(QColor(255, 215, 0), 2)); // Gold outer border
+    painter.setBrush(QColor(15, 18, 30, 230));   // Dark translucent arcade blue
+    painter.drawRoundedRect(bannerRect, 6, 6);
+
+    // Inner orange highlight border
+    painter.setPen(QPen(QColor(255, 120, 0), 1));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawRoundedRect(bannerRect.adjusted(3, 3, -3, -3), 4, 4);
+
+    // Title Text (with 3D drop shadow)
+    QFont titleFont("Courier New", 14, QFont::Black);
+    titleFont.setBold(true);
+    painter.setFont(titleFont);
+
+    // Shadow
+    painter.setPen(QColor(10, 10, 15));
+    painter.drawText(QRect(-bannerW / 2 + 2, -bannerH / 2 + 6, bannerW, 32), Qt::AlignCenter, celebrationTitle);
+
+    // Foreground Title
+    QColor titleColor = (celebrationTitle.contains("FINAL") || celebrationTitle.contains("START"))
+        ? QColor(255, 80, 80)
+        : QColor(255, 220, 0);
+    painter.setPen(titleColor);
+    painter.drawText(QRect(-bannerW / 2, -bannerH / 2 + 4, bannerW, 32), Qt::AlignCenter, celebrationTitle);
+
+    // Subtitle Text
+    QFont subFont("Arial", 9, QFont::Bold);
+    painter.setFont(subFont);
+    painter.setPen(QColor(10, 10, 15));
+    painter.drawText(QRect(-bannerW / 2 + 1, -bannerH / 2 + 37, bannerW, 24), Qt::AlignCenter, celebrationSubtitle);
+
+    painter.setPen(QColor(0, 240, 255)); // Bright Neon Cyan
+    painter.drawText(QRect(-bannerW / 2, -bannerH / 2 + 36, bannerW, 24), Qt::AlignCenter, celebrationSubtitle);
+
+    painter.restore();
 }

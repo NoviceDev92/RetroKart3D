@@ -19,6 +19,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->btnLevel2, &QPushButton::clicked, this, &MainWindow::on_btnLevel2_clicked);
     connect(ui->btnLevel3, &QPushButton::clicked, this, &MainWindow::on_btnLevel3_clicked);
     connect(ui->btnReset, &QPushButton::clicked, this, &MainWindow::on_btnReset_clicked);
+    connect(ui->btnCelebration, &QPushButton::clicked, this, &MainWindow::on_btnCelebration_clicked);
 
     // Give focus to game canvas immediately for keyboard controls
     gameCanvas->setFocus();
@@ -50,6 +51,12 @@ void MainWindow::on_btnLevel3_clicked()
 void MainWindow::on_btnReset_clicked()
 {
     gameCanvas->resetKart();
+    gameCanvas->setFocus();
+}
+
+void MainWindow::on_btnCelebration_clicked()
+{
+    gameCanvas->triggerCelebration("★ FINISH! ★", "COURSE CLEAR!");
     gameCanvas->setFocus();
 }
 

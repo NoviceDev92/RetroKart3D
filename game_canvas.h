@@ -93,6 +93,33 @@ private:
     int nextCheckpoint = 1;
     QString currentSurfaceName = "Tarmac";
 
+    // Celebration & Finish Line Animation
+    struct ConfettiParticle {
+        double x, y;
+        double vx, vy;
+        double w, h;
+        double angle;
+        double vRot;
+        QColor color;
+    };
+
+    bool isCelebrationActive = false;
+    double celebrationTimer = 0.0;
+    double celebrationDuration = 3.6;
+    QString celebrationTitle = "LAP COMPLETE!";
+    QString celebrationSubtitle = "NICE DRIVING!";
+    std::vector<ConfettiParticle> confetti;
+    double flashIntensity = 0.0;
+    bool hasPassedHalfway = false;
+    bool firstStartCrossed = false;
+
+public:
+    void triggerCelebration(const QString &title = "VICTORY!", const QString &subtitle = "COURSE CLEAR!");
+
+private:
+    void updateCelebration(double dt);
+    void renderCelebration();
+
     // Engine rendering steps
     void initTrackMaps();
     void generateDonutPlains();
