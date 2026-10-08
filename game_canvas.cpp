@@ -61,6 +61,15 @@ void GameCanvas::resetKart()
     currentLap = 1;
     nextCheckpoint = 1;
 
+    // Reset item & status state
+    heldItem = PlayerItem::NONE;
+    isRouletteActive = false;
+    rouletteTimer = 0.0;
+    mushroomBoostTimer = 0.0;
+    isSpinning = false;
+    spinTimer = 0.0;
+    inkTimer = 0.0;
+
     // Reset celebration state
     isCelebrationActive = false;
     celebrationTimer = 0.0;
@@ -78,10 +87,18 @@ void GameCanvas::focusInEvent(QFocusEvent *event)
 void GameCanvas::keyPressEvent(QKeyEvent *event)
 {
     pressedKeys.insert(event->key());
-    if (event->key() == Qt::Key_R) {
+    if (event->key() == Qt::Key_Space) {
+        useHeldItem();
+    } else if (event->key() == Qt::Key_R) {
         resetKart();
     } else if (event->key() == Qt::Key_F) {
         triggerCelebration("★ FINISH! ★", "COURSE CLEAR!");
+    } else if (event->key() == Qt::Key_1) {
+        setTrackLevel(TrackLevel::DONUT_PLAINS);
+    } else if (event->key() == Qt::Key_2) {
+        setTrackLevel(TrackLevel::CHOCO_VALLEY);
+    } else if (event->key() == Qt::Key_3) {
+        setTrackLevel(TrackLevel::BOWSER_CASTLE);
     }
 }
 
@@ -96,7 +113,7 @@ void GameCanvas::initTrackMaps()
 }
 
 // -------------------------------------------------------------
-// TRACK GENERATION (PRODURAL TEXTURES & MASKS)
+// TRACK GENERATION (PROCEDURAL TEXTURES & MASKS)
 // -------------------------------------------------------------
 
 void GameCanvas::generateDonutPlains()
@@ -148,12 +165,25 @@ void GameCanvas::generateDonutPlains()
 
     // Sprites along track
     worldSprites.clear();
-    worldSprites.push_back({ 560.0, 200.0, 0.0, SpriteType::QUESTION_BOX, true });
-    worldSprites.push_back({ 620.0, 200.0, 0.0, SpriteType::QUESTION_BOX, true });
-    worldSprites.push_back({ 850.0, 500.0, 0.0, SpriteType::GREEN_PIPE, true });
-    worldSprites.push_back({ 512.0, 800.0, 0.0, SpriteType::QUESTION_BOX, true });
-    worldSprites.push_back({ 180.0, 500.0, 0.0, SpriteType::GREEN_PIPE, true });
-    worldSprites.push_back({ 400.0, 200.0, 0.0, SpriteType::COIN, true });
+    // Item Question Boxes on straightaways
+    worldSprites.push_back({ 560.0, 200.0, 0.0, SpriteType::QUESTION_BOX, true, 0.0 });
+    worldSprites.push_back({ 620.0, 200.0, 0.0, SpriteType::QUESTION_BOX, true, 0.0 });
+    worldSprites.push_back({ 512.0, 800.0, 0.0, SpriteType::QUESTION_BOX, true, 0.0 });
+    worldSprites.push_back({ 450.0, 800.0, 0.0, SpriteType::QUESTION_BOX, true, 0.0 });
+
+    // Roadside obstacles (Green Pipes)
+    worldSprites.push_back({ 850.0, 480.0, 0.0, SpriteType::GREEN_PIPE, true, 0.0 });
+    worldSprites.push_back({ 850.0, 520.0, 0.0, SpriteType::GREEN_PIPE, true, 0.0 });
+    worldSprites.push_back({ 180.0, 480.0, 0.0, SpriteType::GREEN_PIPE, true, 0.0 });
+    worldSprites.push_back({ 180.0, 520.0, 0.0, SpriteType::GREEN_PIPE, true, 0.0 });
+
+    // Track coins
+    worldSprites.push_back({ 400.0, 200.0, 0.0, SpriteType::COIN, true, 0.0 });
+    worldSprites.push_back({ 350.0, 200.0, 0.0, SpriteType::COIN, true, 0.0 });
+    worldSprites.push_back({ 600.0, 800.0, 0.0, SpriteType::COIN, true, 0.0 });
+
+    // Hazard banana
+    worldSprites.push_back({ 780.0, 320.0, 0.0, SpriteType::BANANA_DROPPED, true, 0.0 });
 }
 
 void GameCanvas::generateChocoValley()
@@ -200,10 +230,13 @@ void GameCanvas::generateChocoValley()
     maskPainter.end();
 
     worldSprites.clear();
-    worldSprites.push_back({ 570.0, 200.0, 0.0, SpriteType::QUESTION_BOX, true });
-    worldSprites.push_back({ 680.0, 520.0, 0.0, SpriteType::QUESTION_BOX, true });
-    worldSprites.push_back({ 512.0, 820.0, 0.0, SpriteType::BANANA, true });
-    worldSprites.push_back({ 200.0, 350.0, 0.0, SpriteType::QUESTION_BOX, true });
+    worldSprites.push_back({ 570.0, 200.0, 0.0, SpriteType::QUESTION_BOX, true, 0.0 });
+    worldSprites.push_back({ 680.0, 520.0, 0.0, SpriteType::QUESTION_BOX, true, 0.0 });
+    worldSprites.push_back({ 512.0, 820.0, 0.0, SpriteType::BANANA_DROPPED, true, 0.0 });
+    worldSprites.push_back({ 200.0, 350.0, 0.0, SpriteType::QUESTION_BOX, true, 0.0 });
+    worldSprites.push_back({ 720.0, 380.0, 0.0, SpriteType::OIL_SLICK, true, 0.0 });
+    worldSprites.push_back({ 320.0, 540.0, 0.0, SpriteType::OIL_SLICK, true, 0.0 });
+    worldSprites.push_back({ 420.0, 200.0, 0.0, SpriteType::COIN, true, 0.0 });
 }
 
 void GameCanvas::generateBowserCastle()
@@ -247,10 +280,12 @@ void GameCanvas::generateBowserCastle()
     maskPainter.end();
 
     worldSprites.clear();
-    worldSprites.push_back({ 580.0, 250.0, 0.0, SpriteType::QUESTION_BOX, true });
-    worldSprites.push_back({ 780.0, 400.0, 0.0, SpriteType::GREEN_PIPE, true });
-    worldSprites.push_back({ 650.0, 550.0, 0.0, SpriteType::QUESTION_BOX, true });
-    worldSprites.push_back({ 400.0, 780.0, 0.0, SpriteType::QUESTION_BOX, true });
+    worldSprites.push_back({ 580.0, 250.0, 0.0, SpriteType::QUESTION_BOX, true, 0.0 });
+    worldSprites.push_back({ 780.0, 400.0, 0.0, SpriteType::THWOMP, true, 0.0 });
+    worldSprites.push_back({ 650.0, 550.0, 0.0, SpriteType::QUESTION_BOX, true, 0.0 });
+    worldSprites.push_back({ 400.0, 780.0, 0.0, SpriteType::QUESTION_BOX, true, 0.0 });
+    worldSprites.push_back({ 250.0, 600.0, 0.0, SpriteType::GREEN_PIPE, true, 0.0 });
+    worldSprites.push_back({ 350.0, 250.0, 0.0, SpriteType::COIN, true, 0.0 });
 }
 
 // -------------------------------------------------------------
@@ -263,12 +298,15 @@ void GameCanvas::updateGameLoop()
     if (dt > 0.05) dt = 0.05; // clamp delta time for stability
 
     updatePhysics(dt);
+    updateItemSystem(dt);
     updateCelebration(dt);
 
     renderSky();
     renderGroundMode7();
     renderSprites();
     renderCockpit();
+    renderItemHUD();
+    renderInkOverlay();
     renderCelebration();
 
     emit statsUpdated(kartSpeed, currentLap, kartX, kartZ, kartAngle * (180.0 / M_PI), currentSurfaceName);
@@ -278,6 +316,16 @@ void GameCanvas::updateGameLoop()
 
 void GameCanvas::updatePhysics(double dt)
 {
+    // Handle spinout status
+    if (isSpinning) {
+        kartAngle += 15.0 * dt;
+        kartSpeed = std::max(0.0, kartSpeed - 140.0 * dt);
+        kartX += kartSpeed * std::cos(kartAngle) * dt;
+        kartZ += kartSpeed * std::sin(kartAngle) * dt;
+        currentSurfaceName = "SPINNING OUT!";
+        return;
+    }
+
     // Sample terrain mask
     int sampleU = (static_cast<int>(kartX) % TRACK_MAP_SIZE + TRACK_MAP_SIZE) % TRACK_MAP_SIZE;
     int sampleV = (static_cast<int>(kartZ) % TRACK_MAP_SIZE + TRACK_MAP_SIZE) % TRACK_MAP_SIZE;
@@ -285,9 +333,16 @@ void GameCanvas::updatePhysics(double dt)
 
     double currentMaxSpeed = maxSpeed;
     double currentDrag = friction;
+    double currentAccel = accel;
+
+    // Mushroom / Rocket speed boost override
+    if (mushroomBoostTimer > 0.0) {
+        currentMaxSpeed = maxSpeed * 1.55;
+        currentAccel = accel * 2.2;
+    }
 
     if (qRed(maskColor) == 255 && qGreen(maskColor) == 255 && qBlue(maskColor) == 255) {
-        currentSurfaceName = "Road (Tarmac)";
+        currentSurfaceName = (mushroomBoostTimer > 0.0) ? "Road (BOOST ACTIVE!)" : "Road (Tarmac)";
     } else if (qRed(maskColor) == 255 && qBlue(maskColor) == 255) {
         // Lava!
         currentSurfaceName = "LAVA! (Resetting)";
@@ -295,8 +350,10 @@ void GameCanvas::updatePhysics(double dt)
         return;
     } else if (qGreen(maskColor) == 255 && qRed(maskColor) == 0) {
         currentSurfaceName = "Off-road (Grass/Sand)";
-        currentMaxSpeed *= 0.45;
-        currentDrag *= 3.0;
+        if (mushroomBoostTimer <= 0.0) {
+            currentMaxSpeed *= 0.45;
+            currentDrag *= 3.0;
+        }
     } else if (qRed(maskColor) == 255 && qGreen(maskColor) == 255 && qBlue(maskColor) == 0) {
         currentSurfaceName = "Start / Finish Line";
     }
@@ -309,7 +366,7 @@ void GameCanvas::updatePhysics(double dt)
 
     // Throttle & Braking
     if (forward) {
-        kartSpeed += accel * dt;
+        kartSpeed += currentAccel * dt;
         if (kartSpeed > currentMaxSpeed) kartSpeed = currentMaxSpeed;
     } else if (backward) {
         kartSpeed -= brakeDecel * dt;
@@ -376,14 +433,166 @@ void GameCanvas::updatePhysics(double dt)
         }
     }
 
-    // Sprite collection collision
+    // Sprite collection & obstacle collision
     for (auto &sprite : worldSprites) {
         if (!sprite.active) continue;
         double dx = kartX - sprite.x;
         double dz = kartZ - sprite.z;
-        if (dx * dx + dz * dz < 18.0 * 18.0) {
-            sprite.active = false; // "Collected"
+        double distSq = dx * dx + dz * dz;
+
+        if (distSq < 20.0 * 20.0) {
+            if (sprite.type == SpriteType::QUESTION_BOX) {
+                sprite.active = false;
+                sprite.respawnTimer = 7.0; // Respawns after 7 seconds
+                if (!isRouletteActive && heldItem == PlayerItem::NONE) {
+                    startItemRoulette();
+                }
+            } else if (sprite.type == SpriteType::COIN) {
+                sprite.active = false;
+                sprite.respawnTimer = 10.0;
+                kartSpeed = std::min(maxSpeed, kartSpeed + 18.0); // Mini speed boost
+            } else if (sprite.type == SpriteType::BANANA || sprite.type == SpriteType::BANANA_DROPPED || sprite.type == SpriteType::OIL_SLICK) {
+                sprite.active = false;
+                isSpinning = true;
+                spinTimer = 1.0;
+                kartSpeed *= 0.35;
+            } else if (sprite.type == SpriteType::GREEN_PIPE || sprite.type == SpriteType::THWOMP) {
+                // Solid obstacle collision bounce
+                kartSpeed = -40.0;
+                kartX -= std::cos(kartAngle) * 6.0;
+                kartZ -= std::sin(kartAngle) * 6.0;
+            } else if (sprite.type == SpriteType::MUSHROOM) {
+                sprite.active = false;
+                mushroomBoostTimer = 2.8;
+                kartSpeed = maxSpeed * 1.4;
+            }
         }
+    }
+}
+
+// -------------------------------------------------------------
+// ITEM ROULETTE & POWERUP SYSTEM
+// -------------------------------------------------------------
+
+void GameCanvas::updateItemSystem(double dt)
+{
+    globalTime += dt;
+
+    // Item box respawn timers
+    for (auto &sprite : worldSprites) {
+        if (!sprite.active && sprite.respawnTimer > 0.0) {
+            sprite.respawnTimer -= dt;
+            if (sprite.respawnTimer <= 0.0) {
+                sprite.active = true;
+                sprite.respawnTimer = 0.0;
+            }
+        }
+    }
+
+    // Status effect countdowns
+    if (mushroomBoostTimer > 0.0) {
+        mushroomBoostTimer = std::max(0.0, mushroomBoostTimer - dt);
+    }
+
+    if (isSpinning) {
+        spinTimer -= dt;
+        if (spinTimer <= 0.0) {
+            isSpinning = false;
+        }
+    }
+
+    if (inkTimer > 0.0) {
+        inkTimer = std::max(0.0, inkTimer - dt);
+    }
+
+    // Item Roulette Animation
+    if (isRouletteActive) {
+        rouletteTimer += dt;
+        // Fast cycling that slows down slightly toward completion
+        rouletteIndex = static_cast<int>(rouletteTimer * 12.0) % 5;
+
+        if (rouletteTimer >= rouletteDuration) {
+            isRouletteActive = false;
+            heldItem = spriteToPlayerItem(rouletteItemAt(rouletteIndex));
+        }
+    }
+}
+
+void GameCanvas::startItemRoulette()
+{
+    if (isRouletteActive || heldItem != PlayerItem::NONE) return;
+    isRouletteActive = true;
+    rouletteTimer = 0.0;
+    rouletteDuration = 1.8;
+    rouletteIndex = rand() % 5;
+    heldItem = PlayerItem::NONE;
+}
+
+void GameCanvas::useHeldItem()
+{
+    if (isRouletteActive || heldItem == PlayerItem::NONE) return;
+
+    switch (heldItem) {
+    case PlayerItem::MUSHROOM:
+        mushroomBoostTimer = 3.0;
+        kartSpeed = std::max(kartSpeed, maxSpeed * 1.4);
+        break;
+
+    case PlayerItem::ROCKET:
+        mushroomBoostTimer = 4.5;
+        kartSpeed = maxSpeed * 1.65;
+        break;
+
+    case PlayerItem::BANANA: {
+        // Drop a banana peel behind the player's kart
+        double dropDist = 24.0;
+        double bx = kartX - std::cos(kartAngle) * dropDist;
+        double bz = kartZ - std::sin(kartAngle) * dropDist;
+        worldSprites.push_back({ bx, bz, 0.0, SpriteType::BANANA_DROPPED, true, 0.0 });
+        break;
+    }
+
+    case PlayerItem::GREEN_SHELL: {
+        // Fire green shell forward
+        double fireDist = 28.0;
+        double fx = kartX + std::cos(kartAngle) * fireDist;
+        double fz = kartZ + std::sin(kartAngle) * fireDist;
+        worldSprites.push_back({ fx, fz, 0.0, SpriteType::GREEN_SHELL, true, 0.0 });
+        break;
+    }
+
+    case PlayerItem::INK_BLOOPER:
+        inkTimer = 4.5;
+        break;
+
+    default:
+        break;
+    }
+
+    heldItem = PlayerItem::NONE;
+}
+
+SpriteType GameCanvas::rouletteItemAt(int index) const
+{
+    switch ((index % 5 + 5) % 5) {
+    case 0: return SpriteType::MUSHROOM;
+    case 1: return SpriteType::ROCKET;
+    case 2: return SpriteType::BANANA;
+    case 3: return SpriteType::GREEN_SHELL;
+    case 4: return SpriteType::INK_BLOOPER;
+    default: return SpriteType::MUSHROOM;
+    }
+}
+
+PlayerItem GameCanvas::spriteToPlayerItem(SpriteType type) const
+{
+    switch (type) {
+    case SpriteType::MUSHROOM: return PlayerItem::MUSHROOM;
+    case SpriteType::ROCKET: return PlayerItem::ROCKET;
+    case SpriteType::BANANA: return PlayerItem::BANANA;
+    case SpriteType::GREEN_SHELL: return PlayerItem::GREEN_SHELL;
+    case SpriteType::INK_BLOOPER: return PlayerItem::INK_BLOOPER;
+    default: return PlayerItem::NONE;
     }
 }
 
@@ -471,7 +680,6 @@ void GameCanvas::renderGroundMode7()
 
 void GameCanvas::renderSprites()
 {
-    // Transform sprites to camera space and sort them (Painter's Algorithm)
     struct ProjectedSprite {
         int screenX;
         int screenY;
@@ -479,12 +687,16 @@ void GameCanvas::renderSprites()
         int drawH;
         double depth;
         SpriteType type;
+        bool isPickup;
+        int groundScreenY;
     };
 
     std::vector<ProjectedSprite> renderList;
+    renderList.reserve(worldSprites.size());
 
     double cosA = std::cos(kartAngle);
     double sinA = std::sin(kartAngle);
+    const auto &atlas = SpriteAtlas::instance();
 
     for (const auto &sprite : worldSprites) {
         if (!sprite.active) continue;
@@ -492,64 +704,114 @@ void GameCanvas::renderSprites()
         double dx = sprite.x - kartX;
         double dz = sprite.z - kartZ;
 
-        // Rotate into camera coordinates
-        // Forward vector in world is (cosA, sinA), right vector is (-sinA, cosA)
+        // Camera space coordinates
         double camX = -dx * sinA + dz * cosA;
         double camZ = dx * cosA + dz * sinA;
 
-        // Near-plane clipping
-        if (camZ <= cameraNearPlane) continue;
+        if (camZ <= cameraNearPlane || camZ > 450.0) continue;
+
+        bool isPickup = atlas.isPickup(sprite.type);
+        // Pickups bob up and down smoothly
+        double bobOffset = isPickup ? (std::sin(globalTime * 5.0 + sprite.x * 0.1) * 2.2 + 2.8) : 0.0;
+        double effectiveY = sprite.y + bobOffset;
 
         int sx = static_cast<int>((BUFFER_WIDTH / 2) + (focalLength * camX) / camZ);
-        int sy = static_cast<int>(HORIZON_Y + (focalLength * (cameraHeight - sprite.y)) / camZ);
+        int sy = static_cast<int>(HORIZON_Y + (focalLength * (cameraHeight - effectiveY)) / camZ);
+        int groundY = static_cast<int>(HORIZON_Y + (focalLength * cameraHeight) / camZ);
 
         double scale = focalLength / camZ;
-        int drawW = static_cast<int>(16.0 * scale);
-        int drawH = static_cast<int>(16.0 * scale);
+        int drawW = static_cast<int>(20.0 * scale);
+        int drawH = static_cast<int>(20.0 * scale);
 
         if (drawW <= 1 || drawH <= 1) continue;
 
-        renderList.push_back({ sx, sy, drawW, drawH, camZ, sprite.type });
+        renderList.push_back({ sx, sy, drawW, drawH, camZ, sprite.type, isPickup, groundY });
     }
 
-    // Sort farthest to nearest
+    // Sort farthest to nearest (Painter's Algorithm)
     std::sort(renderList.begin(), renderList.end(), [](const ProjectedSprite &a, const ProjectedSprite &b) {
         return a.depth > b.depth;
     });
 
+    QRgb *pixels = reinterpret_cast<QRgb*>(screenBuffer.bits());
+
     for (const auto &item : renderList) {
-        drawSpritePixelArt(item.screenX, item.screenY, item.drawW, item.drawH, item.type);
+        // Draw soft ground shadow beneath floating pickups
+        if (item.isPickup && item.groundScreenY >= HORIZON_Y && item.groundScreenY < BUFFER_HEIGHT) {
+            int shadowW = item.drawW * 3 / 4;
+            int shadowH = std::max(2, item.drawW / 4);
+            int shStartX = item.screenX - shadowW / 2;
+            int shStartY = item.groundScreenY - shadowH / 2;
+
+            for (int sy = 0; sy < shadowH; ++sy) {
+                int py = shStartY + sy;
+                if (py < HORIZON_Y || py >= BUFFER_HEIGHT) continue;
+                for (int sx = 0; sx < shadowW; ++sx) {
+                    int px = shStartX + sx;
+                    if (px < 0 || px >= BUFFER_WIDTH) continue;
+
+                    double nx = (sx - shadowW / 2.0) / (shadowW / 2.0);
+                    double ny = (sy - shadowH / 2.0) / (shadowH / 2.0);
+                    if (nx * nx + ny * ny <= 1.0) {
+                        QRgb bg = pixels[py * BUFFER_WIDTH + px];
+                        int r = (qRed(bg) * 55) / 100;
+                        int g = (qGreen(bg) * 55) / 100;
+                        int b = (qBlue(bg) * 55) / 100;
+                        pixels[py * BUFFER_WIDTH + px] = qRgb(r, g, b);
+                    }
+                }
+            }
+        }
+
+        // Draw textured billboard
+        const QImage &texture = atlas.getSprite(item.type);
+        drawTexturedBillboard(item.screenX, item.screenY, item.drawW, item.drawH, texture);
     }
 }
 
-void GameCanvas::drawSpritePixelArt(int screenX, int screenY, int drawW, int drawH, SpriteType type)
+void GameCanvas::drawTexturedBillboard(int screenX, int screenY, int drawW, int drawH, const QImage &texture)
 {
+    if (texture.isNull() || drawW <= 0 || drawH <= 0) return;
+
     QRgb *pixels = reinterpret_cast<QRgb*>(screenBuffer.bits());
+    const QRgb *texPixels = reinterpret_cast<const QRgb*>(texture.constBits());
+    int texW = texture.width();
+    int texH = texture.height();
 
     int startX = screenX - drawW / 2;
     int startY = screenY - drawH;
 
-    QRgb baseColor = qRgb(255, 255, 255);
-    switch (type) {
-    case SpriteType::QUESTION_BOX: baseColor = qRgb(255, 215, 0); break; // Gold
-    case SpriteType::GREEN_PIPE:    baseColor = qRgb(40, 180, 40);  break; // Green
-    case SpriteType::COIN:          baseColor = qRgb(255, 235, 100);break; // Bright Yellow
-    case SpriteType::BANANA:        baseColor = qRgb(230, 210, 20); break; // Banana yellow
-    }
+    int clipStartX = std::max(0, startX);
+    int clipEndX = std::min(BUFFER_WIDTH, startX + drawW);
+    int clipStartY = std::max(0, startY);
+    int clipEndY = std::min(BUFFER_HEIGHT, startY + drawH);
 
-    for (int py = 0; py < drawH; ++py) {
-        int targetY = startY + py;
-        if (targetY < 0 || targetY >= BUFFER_HEIGHT) continue;
+    for (int y = clipStartY; y < clipEndY; ++y) {
+        int ty = ((y - startY) * texH) / drawH;
+        if (ty < 0) ty = 0;
+        if (ty >= texH) ty = texH - 1;
+        const QRgb *texRow = texPixels + ty * texW;
+        QRgb *bufRow = pixels + y * BUFFER_WIDTH;
 
-        for (int px = 0; px < drawW; ++px) {
-            int targetX = startX + px;
-            if (targetX < 0 || targetX >= BUFFER_WIDTH) continue;
+        for (int x = clipStartX; x < clipEndX; ++x) {
+            int tx = ((x - startX) * texW) / drawW;
+            if (tx < 0) tx = 0;
+            if (tx >= texW) tx = texW - 1;
 
-            // Border outline
-            if (px == 0 || px == drawW - 1 || py == 0 || py == drawH - 1) {
-                pixels[targetY * BUFFER_WIDTH + targetX] = qRgb(20, 20, 20);
+            QRgb color = texRow[tx];
+            int alpha = qAlpha(color);
+            if (alpha < 32) continue; // transparent pixel
+
+            if (alpha >= 250) {
+                bufRow[x] = color;
             } else {
-                pixels[targetY * BUFFER_WIDTH + targetX] = baseColor;
+                // Alpha blend
+                QRgb dst = bufRow[x];
+                int invA = 255 - alpha;
+                int r = (qRed(color) * alpha + qRed(dst) * invA) / 255;
+                int g = (qGreen(color) * alpha + qGreen(dst) * invA) / 255;
+                int b = (qBlue(color) * alpha + qBlue(dst) * invA) / 255;
+                bufRow[x] = qRgb(r, g, b);
             }
         }
     }
@@ -559,15 +821,29 @@ void GameCanvas::renderCockpit()
 {
     QRgb *pixels = reinterpret_cast<QRgb*>(screenBuffer.bits());
 
+    // Boost flame / sparks effect when boost is active
+    if (mushroomBoostTimer > 0.0) {
+        int cx = BUFFER_WIDTH / 2;
+        for (int i = 0; i < 20; ++i) {
+            int px = cx + (rand() % 90 - 45);
+            int py = BUFFER_HEIGHT - 35 + (rand() % 35);
+            if (px >= 0 && px < BUFFER_WIDTH && py >= 0 && py < BUFFER_HEIGHT) {
+                pixels[py * BUFFER_WIDTH + px] = (rand() % 2 == 0) ? qRgb(255, 230, 50) : qRgb(255, 80, 20);
+            }
+        }
+    }
+
     // First-person kart hood at bottom center
     int hoodCenter = BUFFER_WIDTH / 2;
     int hoodTop = BUFFER_HEIGHT - 35;
+
+    QRgb hoodColor = (mushroomBoostTimer > 0.0) ? qRgb(240, 70, 20) : qRgb(180, 20, 20); // Golden fiery red during boost
 
     for (int y = hoodTop; y < BUFFER_HEIGHT; ++y) {
         int halfWidth = static_cast<int>(30.0 + (y - hoodTop) * 2.2);
         for (int x = hoodCenter - halfWidth; x < hoodCenter + halfWidth; ++x) {
             if (x >= 0 && x < BUFFER_WIDTH) {
-                pixels[y * BUFFER_WIDTH + x] = qRgb(180, 20, 20); // Classic Red Kart
+                pixels[y * BUFFER_WIDTH + x] = hoodColor;
             }
         }
     }
@@ -587,6 +863,115 @@ void GameCanvas::renderCockpit()
             }
         }
     }
+}
+
+void GameCanvas::renderItemHUD()
+{
+    QPainter painter(&screenBuffer);
+    painter.setRenderHint(QPainter::Antialiasing, false);
+
+    int boxSize = 42;
+    int boxX = BUFFER_WIDTH / 2 - boxSize / 2;
+    int boxY = 8;
+    QRect hudRect(boxX, boxY, boxSize, boxSize);
+
+    // Box Frame
+    QColor borderColor = QColor(100, 105, 120);
+    QColor bgColor = QColor(20, 22, 32, 210);
+
+    if (isRouletteActive) {
+        // Flashing arcade border while rolling
+        int flashVal = static_cast<int>(globalTime * 14.0) % 3;
+        if (flashVal == 0) borderColor = QColor(255, 215, 0);
+        else if (flashVal == 1) borderColor = QColor(0, 235, 255);
+        else borderColor = QColor(255, 60, 60);
+        bgColor = QColor(35, 30, 50, 230);
+    } else if (heldItem != PlayerItem::NONE) {
+        // Bright golden border for held item
+        borderColor = QColor(255, 215, 0);
+        bgColor = QColor(25, 28, 45, 235);
+    }
+
+    // Background and border
+    painter.fillRect(hudRect, bgColor);
+    painter.setPen(QPen(borderColor, 2));
+    painter.drawRect(hudRect);
+
+    // Inner highlight border
+    painter.setPen(QPen(QColor(borderColor.red(), borderColor.green(), borderColor.blue(), 100), 1));
+    painter.drawRect(hudRect.adjusted(2, 2, -2, -2));
+
+    const auto &atlas = SpriteAtlas::instance();
+
+    if (isRouletteActive) {
+        SpriteType currentType = rouletteItemAt(rouletteIndex);
+        const QImage &img = atlas.getSprite(currentType);
+        painter.drawImage(QRect(boxX + 5, boxY + 5, 32, 32), img);
+
+        // Subtitle
+        QFont hintFont("Arial", 6, QFont::Bold);
+        painter.setFont(hintFont);
+        painter.setPen(QColor(255, 220, 0));
+        painter.drawText(QRect(boxX - 20, boxY + boxSize + 1, boxSize + 40, 12), Qt::AlignCenter, "ROLLING...");
+    } else if (heldItem != PlayerItem::NONE) {
+        SpriteType displayType = SpriteType::QUESTION_BOX;
+        switch (heldItem) {
+        case PlayerItem::MUSHROOM: displayType = SpriteType::MUSHROOM; break;
+        case PlayerItem::ROCKET: displayType = SpriteType::ROCKET; break;
+        case PlayerItem::BANANA: displayType = SpriteType::BANANA; break;
+        case PlayerItem::GREEN_SHELL: displayType = SpriteType::GREEN_SHELL; break;
+        case PlayerItem::INK_BLOOPER: displayType = SpriteType::INK_BLOOPER; break;
+        default: break;
+        }
+
+        const QImage &img = atlas.getSprite(displayType);
+        painter.drawImage(QRect(boxX + 5, boxY + 5, 32, 32), img);
+
+        // Pulsing "[SPACE]" hint
+        QFont hintFont("Arial", 6, QFont::Bold);
+        painter.setFont(hintFont);
+        painter.setPen(QColor(255, 255, 255));
+        painter.drawText(QRect(boxX - 30, boxY + boxSize + 1, boxSize + 60, 12), Qt::AlignCenter, "[SPACE] USE");
+    } else {
+        // Empty slot question mark silhouette
+        QFont emptyFont("Arial", 14, QFont::Bold);
+        painter.setFont(emptyFont);
+        painter.setPen(QColor(70, 75, 90));
+        painter.drawText(hudRect, Qt::AlignCenter, "?");
+
+        QFont hintFont("Arial", 5, QFont::Normal);
+        painter.setFont(hintFont);
+        painter.setPen(QColor(130, 135, 150));
+        painter.drawText(QRect(boxX - 20, boxY + boxSize + 1, boxSize + 40, 10), Qt::AlignCenter, "ITEM");
+    }
+}
+
+void GameCanvas::renderInkOverlay()
+{
+    if (inkTimer <= 0.0) return;
+
+    QPainter painter(&screenBuffer);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    int alpha = std::min(235, static_cast<int>((inkTimer / 4.5) * 230.0));
+    QColor inkColor(15, 12, 28, alpha);
+    painter.setBrush(inkColor);
+    painter.setPen(Qt::NoPen);
+
+    // Blooper ink splatters across windshield
+    painter.drawEllipse(QPoint(110, 80), 38, 35);
+    painter.drawEllipse(QPoint(125, 100), 20, 24);
+    painter.drawEllipse(QPoint(85, 70), 16, 18);
+
+    painter.drawEllipse(QPoint(290, 110), 45, 40);
+    painter.drawEllipse(QPoint(265, 130), 22, 26);
+    painter.drawEllipse(QPoint(315, 90), 25, 20);
+
+    painter.drawEllipse(QPoint(190, 140), 32, 30);
+    painter.drawEllipse(QPoint(205, 160), 15, 22);
+
+    painter.drawEllipse(QPoint(60, 160), 28, 26);
+    painter.drawEllipse(QPoint(340, 60), 24, 22);
 }
 
 void GameCanvas::paintEvent(QPaintEvent *)

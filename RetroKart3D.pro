@@ -7,11 +7,13 @@ CONFIG += c++17
 SOURCES += \
     main.cpp \
     mainwindow.cpp \
-    game_canvas.cpp
+    game_canvas.cpp \
+    sprite_atlas.cpp
 
 HEADERS += \
     mainwindow.h \
-    game_canvas.h
+    game_canvas.h \
+    sprite_atlas.h
 
 FORMS += \
     mainwindow.ui

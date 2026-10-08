@@ -8,6 +8,7 @@
 #include <vector>
 #include <set>
 #include <cmath>
+#include "sprite_atlas.h"
 
 enum class TrackLevel {
     DONUT_PLAINS = 0,   // Level 1: Easy
@@ -15,11 +16,14 @@ enum class TrackLevel {
     BOWSER_CASTLE = 2   // Level 3: Hard
 };
 
-enum class SpriteType {
-    QUESTION_BOX,
-    GREEN_PIPE,
-    COIN,
-    BANANA
+// Player's held item
+enum class PlayerItem {
+    NONE,
+    MUSHROOM,
+    ROCKET,
+    BANANA,
+    GREEN_SHELL,
+    INK_BLOOPER
 };
 
 struct WorldSprite {
@@ -28,6 +32,7 @@ struct WorldSprite {
     double y;           // height offset above ground
     SpriteType type;
     bool active;
+    double respawnTimer; // time remaining before respawn (for item boxes)
 };
 
 class GameCanvas : public QWidget
@@ -40,6 +45,7 @@ public:
 
     void setTrackLevel(TrackLevel level);
     void resetKart();
+    void triggerCelebration(const QString &title = "VICTORY!", const QString &subtitle = "COURSE CLEAR!");
 
 signals:
     void statsUpdated(double speed, int lap, double x, double z, double angle, QString surface);
@@ -64,6 +70,9 @@ private:
     QTimer gameTimer;
     QElapsedTimer frameTimer;
     std::set<int> pressedKeys;
+
+    // Global animation time
+    double globalTime = 0.0;
 
     // Track state
     TrackLevel currentLevel = TrackLevel::DONUT_PLAINS;
@@ -93,6 +102,20 @@ private:
     int nextCheckpoint = 1;
     QString currentSurfaceName = "Tarmac";
 
+    // Player Item System
+    PlayerItem heldItem = PlayerItem::NONE;
+    bool isRouletteActive = false;
+    double rouletteTimer = 0.0;
+    double rouletteDuration = 2.0;
+    int rouletteIndex = 0;
+    double rouletteSpeed = 0.0;
+
+    // Item effect timers
+    double mushroomBoostTimer = 0.0;
+    bool isSpinning = false;
+    double spinTimer = 0.0;
+    double inkTimer = 0.0;
+
     // Celebration & Finish Line Animation
     struct ConfettiParticle {
         double x, y;
@@ -113,13 +136,6 @@ private:
     bool hasPassedHalfway = false;
     bool firstStartCrossed = false;
 
-public:
-    void triggerCelebration(const QString &title = "VICTORY!", const QString &subtitle = "COURSE CLEAR!");
-
-private:
-    void updateCelebration(double dt);
-    void renderCelebration();
-
     // Engine rendering steps
     void initTrackMaps();
     void generateDonutPlains();
@@ -127,13 +143,25 @@ private:
     void generateBowserCastle();
 
     void updatePhysics(double dt);
+    void updateItemSystem(double dt);
     void renderSky();
     void renderGroundMode7();
     void renderSprites();
     void renderCockpit();
+    void renderItemHUD();
+    void renderInkOverlay();
 
-    // Sprite drawing helpers
-    void drawSpritePixelArt(int screenX, int screenY, int drawW, int drawH, SpriteType type);
+    void updateCelebration(double dt);
+    void renderCelebration();
+
+    // Texture-mapped sprite drawing
+    void drawTexturedBillboard(int screenX, int screenY, int drawW, int drawH, const QImage& texture);
+
+    // Item roulette helpers
+    void startItemRoulette();
+    void useHeldItem();
+    SpriteType rouletteItemAt(int index) const;
+    PlayerItem spriteToPlayerItem(SpriteType type) const;
 };
 
 #endif // GAME_CANVAS_H
