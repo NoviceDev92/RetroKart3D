@@ -30,6 +30,15 @@ void SpriteAtlas::generateAllSprites()
     generateCoin();
     generateBananaDropped();
     generateShellProjectile();
+    generateKartMario();
+    generateKartBowser();
+    generateKartPeach();
+    generateKartToad();
+    generateKartAlts();
+    generateLavaGeyserBubbling();
+    generateLavaGeyserErupting();
+    generateChocolateFountain();
+    generateChocolateCandy();
 }
 
 const QImage& SpriteAtlas::getSprite(SpriteType type) const
@@ -51,7 +60,10 @@ bool SpriteAtlas::isPickup(SpriteType type) const
 bool SpriteAtlas::isObstacle(SpriteType type) const
 {
     return type == SpriteType::GREEN_PIPE || type == SpriteType::THWOMP ||
-           type == SpriteType::OIL_SLICK || type == SpriteType::BANANA_DROPPED;
+           type == SpriteType::OIL_SLICK || type == SpriteType::BANANA_DROPPED ||
+           type == SpriteType::LAVA_GEYSER_ERUPTING ||
+           type == SpriteType::CHOCOLATE_FOUNTAIN ||
+           type == SpriteType::CHOCOLATE_CANDY;
 }
 
 void SpriteAtlas::setPixel(QImage& img, int x, int y, QRgb color)
@@ -507,3 +519,425 @@ void SpriteAtlas::generateShellProjectile()
 
     sprites[SpriteType::SHELL_PROJECTILE] = img;
 }
+
+void SpriteAtlas::generateKartMario()
+{
+    QImage img(SPRITE_SIZE, SPRITE_SIZE, QImage::Format_ARGB32);
+    img.fill(Qt::transparent);
+
+    QRgb red       = qRgba(220, 25, 25, 255);
+    QRgb darkRed   = qRgba(150, 15, 15, 255);
+    QRgb blue      = qRgba(30, 80, 200, 255);
+    QRgb white     = qRgba(250, 250, 250, 255);
+    QRgb skin      = qRgba(255, 200, 150, 255);
+    QRgb brown     = qRgba(90, 50, 20, 255);
+    QRgb tire      = qRgba(25, 25, 28, 255);
+    QRgb rim       = qRgba(165, 170, 180, 255);
+    QRgb chrome    = qRgba(210, 215, 225, 255);
+    QRgb shadow    = qRgba(15, 15, 15, 160);
+
+    // Ground Shadow
+    fillCircle(img, 16, 29, 8, shadow, shadow);
+
+    // Tires (Left & Right)
+    fillRect(img, 3, 19, 5, 9, tire);
+    fillRect(img, 24, 19, 5, 9, tire);
+    fillRect(img, 4, 22, 2, 4, rim);
+    fillRect(img, 25, 22, 2, 4, rim);
+
+    // Kart Chassis
+    fillRect(img, 8, 20, 16, 8, red);
+    fillRect(img, 7, 23, 18, 5, darkRed);
+    fillRect(img, 15, 20, 2, 8, white); // Center racing stripe
+
+    // Twin Exhausts
+    fillRect(img, 9, 25, 3, 4, chrome);
+    fillRect(img, 20, 25, 3, 4, chrome);
+
+    // Overalls & Shoulders
+    fillRect(img, 11, 14, 10, 6, blue);
+    fillRect(img, 13, 15, 6, 5, red); // Shirt back
+
+    // Head, Hair & Red Cap
+    fillRect(img, 12, 10, 8, 4, skin);
+    fillRect(img, 11, 11, 2, 3, brown); // Hair
+    fillRect(img, 19, 11, 2, 3, brown);
+    fillCircle(img, 16, 7, 4, red, darkRed); // Cap dome
+    fillRect(img, 12, 8, 8, 2, red);         // Visor
+    fillCircle(img, 16, 6, 2, white, white); // White 'M' badge
+    setPixel(img, 16, 6, red);               // Red M pixel
+
+    sprites[SpriteType::KART_MARIO] = img;
+}
+
+void SpriteAtlas::generateKartBowser()
+{
+    QImage img(SPRITE_SIZE, SPRITE_SIZE, QImage::Format_ARGB32);
+    img.fill(Qt::transparent);
+
+    QRgb darkGreen = qRgba(30, 105, 40, 255);
+    QRgb deepGreen = qRgba(20, 75, 25, 255);
+    QRgb orange    = qRgba(240, 130, 15, 255);
+    QRgb hornBone  = qRgba(245, 235, 180, 255);
+    QRgb rimWhite  = qRgba(245, 245, 235, 255);
+    QRgb brassGold = qRgba(220, 175, 30, 255);
+    QRgb tire      = qRgba(20, 20, 22, 255);
+    QRgb chrome    = qRgba(180, 185, 195, 255);
+    QRgb shadow    = qRgba(15, 15, 15, 160);
+
+    // Ground Shadow
+    fillCircle(img, 16, 29, 9, shadow, shadow);
+
+    // Massive Heavy Tires
+    fillRect(img, 2, 18, 6, 11, tire);
+    fillRect(img, 24, 18, 6, 11, tire);
+    fillRect(img, 3, 22, 2, 4, brassGold); // Studded brass hub
+    fillRect(img, 25, 22, 2, 4, brassGold);
+
+    // Spiked Kart Chassis
+    fillRect(img, 8, 20, 16, 9, darkGreen);
+    fillRect(img, 7, 24, 18, 5, deepGreen);
+    fillRect(img, 15, 20, 2, 9, orange); // Fiery orange stripe
+
+    // Oversized Chrome Exhausts
+    fillRect(img, 9, 26, 3, 5, chrome);
+    fillRect(img, 20, 26, 3, 5, chrome);
+
+    // Spiked Shell Back
+    fillCircle(img, 16, 14, 6, darkGreen, rimWhite);
+    setPixel(img, 13, 13, rimWhite); // Shell bone spikes
+    setPixel(img, 19, 13, rimWhite);
+    setPixel(img, 16, 11, rimWhite);
+
+    // Bowser Horns & Fiery Red-Orange Hair
+    fillRect(img, 13, 4, 6, 4, orange); // Fiery hair crest
+    fillRect(img, 14, 3, 4, 2, qRgba(255, 60, 20, 255));
+    // Curved Horns
+    fillRect(img, 9, 5, 3, 2, hornBone);
+    setPixel(img, 8, 4, hornBone);
+    fillRect(img, 20, 5, 3, 2, hornBone);
+    setPixel(img, 23, 4, hornBone);
+
+    sprites[SpriteType::KART_BOWSER] = img;
+}
+
+void SpriteAtlas::generateKartPeach()
+{
+    QImage img(SPRITE_SIZE, SPRITE_SIZE, QImage::Format_ARGB32);
+    img.fill(Qt::transparent);
+
+    QRgb pink      = qRgba(245, 130, 175, 255);
+    QRgb darkPink  = qRgba(200, 80, 130, 255);
+    QRgb gold      = qRgba(255, 215, 0, 255);
+    QRgb blonde    = qRgba(255, 220, 60, 255);
+    QRgb darkBlond = qRgba(215, 180, 30, 255);
+    QRgb white     = qRgba(255, 255, 255, 255);
+    QRgb gemBlue   = qRgba(40, 170, 255, 255);
+    QRgb tire      = qRgba(30, 30, 35, 255);
+    QRgb shadow    = qRgba(15, 15, 15, 160);
+
+    // Ground Shadow
+    fillCircle(img, 16, 29, 8, shadow, shadow);
+
+    // Slim Agility Tires
+    fillRect(img, 4, 20, 4, 9, tire);
+    fillRect(img, 24, 20, 4, 9, tire);
+    fillRect(img, 5, 23, 2, 3, gold); // Gold wheel nuts
+    fillRect(img, 25, 23, 2, 3, gold);
+
+    // Sleek Pink Chassis
+    fillRect(img, 8, 20, 16, 8, pink);
+    fillRect(img, 7, 23, 18, 5, darkPink);
+    fillRect(img, 15, 20, 2, 8, white); // White racing stripe
+
+    // Flowing Blonde Hair & Dress
+    fillRect(img, 10, 14, 12, 6, pink); // Pink dress shoulders
+    fillRect(img, 9, 10, 14, 7, blonde);
+    fillRect(img, 10, 12, 12, 4, darkBlond);
+
+    // Royal Golden Crown
+    fillRect(img, 13, 5, 6, 3, gold);
+    setPixel(img, 12, 4, gold); // Crown tips
+    setPixel(img, 15, 3, gold);
+    setPixel(img, 18, 4, gold);
+    setPixel(img, 15, 5, gemBlue); // Center sapphire jewel
+
+    sprites[SpriteType::KART_PEACH] = img;
+}
+
+void SpriteAtlas::generateKartToad()
+{
+    QImage img(SPRITE_SIZE, SPRITE_SIZE, QImage::Format_ARGB32);
+    img.fill(Qt::transparent);
+
+    QRgb blue      = qRgba(25, 95, 220, 255);
+    QRgb darkBlue  = qRgba(15, 65, 160, 255);
+    QRgb white     = qRgba(255, 255, 255, 255);
+    QRgb redSpot   = qRgba(225, 30, 30, 255);
+    QRgb skin      = qRgba(255, 210, 170, 255);
+    QRgb goldVest  = qRgba(255, 200, 30, 255);
+    QRgb tire      = qRgba(28, 28, 30, 255);
+    QRgb chrome    = qRgba(215, 220, 230, 255);
+    QRgb shadow    = qRgba(15, 15, 15, 160);
+
+    // Ground Shadow
+    fillCircle(img, 16, 29, 8, shadow, shadow);
+
+    // Lightweight Tires
+    fillRect(img, 4, 20, 4, 9, tire);
+    fillRect(img, 24, 20, 4, 9, tire);
+    fillRect(img, 5, 23, 2, 3, chrome);
+    fillRect(img, 25, 23, 2, 3, chrome);
+
+    // Compact Blue Chassis
+    fillRect(img, 8, 20, 16, 8, blue);
+    fillRect(img, 7, 23, 18, 5, darkBlue);
+    fillRect(img, 15, 20, 2, 8, white); // White stripe
+
+    // Blue Vest with Gold Trim
+    fillRect(img, 11, 14, 10, 5, blue);
+    fillRect(img, 12, 14, 1, 5, goldVest);
+    fillRect(img, 18, 14, 1, 5, goldVest);
+    fillRect(img, 13, 11, 6, 4, skin); // Neck/head
+
+    // Mushroom Cap (White dome with Red Spots)
+    fillCircle(img, 16, 7, 6, white, qRgba(220, 220, 220, 255));
+    // Red Spots
+    fillCircle(img, 16, 5, 2, redSpot, redSpot); // Top spot
+    fillRect(img, 11, 7, 2, 3, redSpot);         // Left spot
+    fillRect(img, 19, 7, 2, 3, redSpot);         // Right spot
+
+    sprites[SpriteType::KART_TOAD] = img;
+}
+
+void SpriteAtlas::generateKartAlts()
+{
+    // Fire Mario ALT
+    if (sprites.count(SpriteType::KART_MARIO)) {
+        QImage alt = sprites.at(SpriteType::KART_MARIO).copy();
+        for (int y = 0; y < SPRITE_SIZE; ++y) {
+            for (int x = 0; x < SPRITE_SIZE; ++x) {
+                QRgb p = alt.pixel(x, y);
+                // Swap red body for crisp white
+                if (qRed(p) > 180 && qGreen(p) < 60 && qBlue(p) < 60 && y >= 20) {
+                    alt.setPixel(x, y, qRgba(240, 240, 255, qAlpha(p)));
+                }
+            }
+        }
+        sprites[SpriteType::KART_MARIO_ALT] = alt;
+    }
+
+    // Dry Bowser ALT (Charcoal gray)
+    if (sprites.count(SpriteType::KART_BOWSER)) {
+        QImage alt = sprites.at(SpriteType::KART_BOWSER).copy();
+        for (int y = 0; y < SPRITE_SIZE; ++y) {
+            for (int x = 0; x < SPRITE_SIZE; ++x) {
+                QRgb p = alt.pixel(x, y);
+                if (qGreen(p) > 80 && qRed(p) < 50) {
+                    alt.setPixel(x, y, qRgba(65, 65, 70, qAlpha(p)));
+                }
+            }
+        }
+        sprites[SpriteType::KART_BOWSER_ALT] = alt;
+    }
+
+    // Daisy ALT (Orange)
+    if (sprites.count(SpriteType::KART_PEACH)) {
+        QImage alt = sprites.at(SpriteType::KART_PEACH).copy();
+        for (int y = 0; y < SPRITE_SIZE; ++y) {
+            for (int x = 0; x < SPRITE_SIZE; ++x) {
+                QRgb p = alt.pixel(x, y);
+                if (qRed(p) > 200 && qBlue(p) > 140) {
+                    alt.setPixel(x, y, qRgba(255, 160, 30, qAlpha(p)));
+                }
+            }
+        }
+        sprites[SpriteType::KART_PEACH_ALT] = alt;
+    }
+
+    // Yellow Toad ALT
+    if (sprites.count(SpriteType::KART_TOAD)) {
+        QImage alt = sprites.at(SpriteType::KART_TOAD).copy();
+        for (int y = 0; y < SPRITE_SIZE; ++y) {
+            for (int x = 0; x < SPRITE_SIZE; ++x) {
+                QRgb p = alt.pixel(x, y);
+                if (qBlue(p) > 180 && qRed(p) < 50) {
+                    alt.setPixel(x, y, qRgba(245, 210, 30, qAlpha(p)));
+                }
+            }
+        }
+        sprites[SpriteType::KART_TOAD_ALT] = alt;
+    }
+}
+
+// -------------------------------------------------------------
+// TRACK HAZARDS GENERATION (Milestone 3 F10, F11)
+// -------------------------------------------------------------
+
+void SpriteAtlas::generateLavaGeyserBubbling()
+{
+    QImage img(SPRITE_SIZE, SPRITE_SIZE, QImage::Format_ARGB32);
+    img.fill(Qt::transparent);
+
+    // 1. Base caldera magma pool (y: 20 to 30)
+    for (int y = 20; y < 31; ++y) {
+        int halfW = static_cast<int>(14.0 * std::sin((y - 19) / 12.0 * M_PI));
+        for (int x = 16 - halfW; x <= 16 + halfW; ++x) {
+            int d = std::abs(x - 16);
+            if (d > halfW - 2)
+                setPixel(img, x, y, qRgba(90, 15, 10, 240));    // Dark crust outline
+            else if (d > halfW - 5)
+                setPixel(img, x, y, qRgba(190, 45, 10, 255));   // Crimson magma
+            else
+                setPixel(img, x, y, qRgba(255, 130, 20, 255));  // Molten orange
+        }
+    }
+
+    // 2. Glowing bubbling magma domes
+    fillCircle(img, 12, 23, 3, qRgba(255, 210, 30, 255), qRgba(220, 70, 10, 255));
+    fillCircle(img, 19, 22, 4, qRgba(255, 235, 80, 255), qRgba(240, 90, 15, 255));
+    fillCircle(img, 15, 25, 2, qRgba(255, 255, 160, 255), qRgba(255, 140, 20, 255));
+
+    // 3. Smoke / heat ripples rising
+    setPixel(img, 14, 17, qRgba(160, 60, 20, 180));
+    setPixel(img, 15, 16, qRgba(180, 70, 25, 190));
+    setPixel(img, 18, 15, qRgba(150, 50, 15, 170));
+    setPixel(img, 17, 13, qRgba(120, 40, 15, 140));
+
+    sprites[SpriteType::LAVA_GEYSER_BUBBLING] = img;
+}
+
+void SpriteAtlas::generateLavaGeyserErupting()
+{
+    QImage img(SPRITE_SIZE, SPRITE_SIZE, QImage::Format_ARGB32);
+    img.fill(Qt::transparent);
+
+    // 1. Magma pool base
+    for (int y = 24; y < 32; ++y) {
+        int hw = 12 - (y - 24);
+        for (int x = 16 - hw; x <= 16 + hw; ++x) {
+            setPixel(img, x, y, qRgba(180, 30, 10, 250));
+        }
+    }
+
+    // 2. Towering flame and plasma pillar (y: 4 to 28)
+    for (int y = 4; y < 28; ++y) {
+        double flare = 1.0 + 0.3 * std::sin(y * 0.8);
+        int halfW = static_cast<int>((5.0 + (28 - y) * 0.15) * flare);
+        for (int x = 16 - halfW; x <= 16 + halfW; ++x) {
+            int dist = std::abs(x - 16);
+            if (dist == halfW) {
+                setPixel(img, x, y, qRgba(140, 20, 10, 220));   // Dark crimson edge
+            } else if (dist >= halfW - 2) {
+                setPixel(img, x, y, qRgba(240, 60, 10, 255));   // Fiery red-orange
+            } else if (dist >= halfW - 3) {
+                setPixel(img, x, y, qRgba(255, 170, 20, 255));  // Bright orange
+            } else {
+                setPixel(img, x, y, qRgba(255, 255, 180, 255)); // Incandescent white-yellow core
+            }
+        }
+    }
+
+    // 3. Billowing smoke & fiery sparks at crest
+    fillCircle(img, 12, 5, 3, qRgba(100, 25, 15, 210), qRgba(60, 15, 10, 180));
+    fillCircle(img, 20, 4, 3, qRgba(110, 30, 15, 210), qRgba(60, 15, 10, 180));
+    fillCircle(img, 16, 2, 2, qRgba(255, 200, 50, 255), qRgba(200, 50, 10, 255)); // Crown spark
+
+    // Flying cinders
+    setPixel(img, 6, 8, qRgba(255, 180, 30, 230));
+    setPixel(img, 26, 7, qRgba(255, 160, 20, 230));
+    setPixel(img, 8, 14, qRgba(255, 100, 10, 210));
+    setPixel(img, 24, 15, qRgba(255, 120, 15, 210));
+
+    sprites[SpriteType::LAVA_GEYSER_ERUPTING] = img;
+}
+
+void SpriteAtlas::generateChocolateFountain()
+{
+    QImage img(SPRITE_SIZE, SPRITE_SIZE, QImage::Format_ARGB32);
+    img.fill(Qt::transparent);
+
+    // 1. Lower chocolate basin (y: 22 to 30)
+    for (int y = 22; y < 31; ++y) {
+        int hw = static_cast<int>(13.0 * std::sin((y - 21) / 10.0 * M_PI));
+        for (int x = 16 - hw; x <= 16 + hw; ++x) {
+            int d = std::abs(x - 16);
+            if (d == hw)
+                setPixel(img, x, y, qRgba(50, 25, 10, 255));    // Dark chocolate crust
+            else if (d > hw - 3)
+                setPixel(img, x, y, qRgba(85, 45, 20, 255));    // Milk chocolate
+            else
+                setPixel(img, x, y, qRgba(115, 65, 30, 255));   // Rich brown
+        }
+    }
+
+    // 2. Middle tier (y: 14 to 21)
+    for (int y = 14; y < 22; ++y) {
+        int hw = static_cast<int>(8.0 * std::sin((y - 13) / 9.0 * M_PI));
+        for (int x = 16 - hw; x <= 16 + hw; ++x) {
+            setPixel(img, x, y, qRgba(105, 55, 25, 255));
+        }
+    }
+
+    // 3. Flowing dome / top plume (y: 6 to 14)
+    fillCircle(img, 16, 11, 5, qRgba(135, 75, 35, 255), qRgba(60, 30, 15, 255));
+
+    // 4. Creamy highlights & cascading syrup ribbons
+    setPixel(img, 15, 8, qRgba(210, 160, 110, 240));  // Specular sheen
+    setPixel(img, 16, 8, qRgba(220, 175, 125, 240));
+    setPixel(img, 12, 16, qRgba(175, 115, 65, 230)); // Waterfall sheen
+    setPixel(img, 20, 16, qRgba(175, 115, 65, 230));
+
+    // Mud droplets flying
+    setPixel(img, 8, 12, qRgba(90, 45, 20, 220));
+    setPixel(img, 24, 11, qRgba(90, 45, 20, 220));
+
+    sprites[SpriteType::CHOCOLATE_FOUNTAIN] = img;
+}
+
+void SpriteAtlas::generateChocolateCandy()
+{
+    QImage img(SPRITE_SIZE, SPRITE_SIZE, QImage::Format_ARGB32);
+    img.fill(Qt::transparent);
+
+    int cx = 16, cy = 16, r = 13;
+
+    // 1. Shaded 3D spherical chocolate sphere
+    for (int y = cy - r; y <= cy + r; ++y) {
+        for (int x = cx - r; x <= cx + r; ++x) {
+            double dx = x - cx;
+            double dy = y - cy;
+            double d2 = dx * dx + dy * dy;
+            if (d2 <= r * r) {
+                if (d2 >= (r - 1) * (r - 1)) {
+                    setPixel(img, x, y, qRgba(40, 20, 10, 255)); // Dark outline
+                } else {
+                    // Spherical lighting from top-left (lx = -0.4, ly = -0.4)
+                    double nx = dx / r;
+                    double ny = dy / r;
+                    double diff = std::clamp(-0.5 * nx - 0.5 * ny + 0.4, 0.0, 1.0);
+                    int red   = static_cast<int>(60  + diff * 90);
+                    int green = static_cast<int>(30  + diff * 50);
+                    int blue  = static_cast<int>(12  + diff * 25);
+                    setPixel(img, x, y, qRgba(red, green, blue, 255));
+                }
+            }
+        }
+    }
+
+    // 2. White vanilla cream swirl stripes across bonbon
+    for (int t = -10; t <= 10; ++t) {
+        int sx = cx + t;
+        int sy = cy + static_cast<int>(std::sin(t * 0.3) * 5.0);
+        if ((sx - cx)*(sx - cx) + (sy - cy)*(sy - cy) < (r - 2)*(r - 2)) {
+            setPixel(img, sx, sy, qRgba(250, 240, 225, 255));
+            setPixel(img, sx, sy + 1, qRgba(230, 215, 195, 240));
+        }
+    }
+
+    // 3. Glossy specular highlight
+    fillCircle(img, cx - 4, cy - 5, 2, qRgba(255, 255, 240, 240), qRgba(200, 180, 160, 200));
+
+    sprites[SpriteType::CHOCOLATE_CANDY] = img;
+}
+

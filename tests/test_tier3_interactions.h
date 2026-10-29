@@ -1,0 +1,6 @@
+#ifndef TEST_TIER3_INTERACTIONS_H
+#define TEST_TIER3_INTERACTIONS_H
+
+void runTier3InteractionTests();
+
+#endif // TEST_TIER3_INTERACTIONS_H

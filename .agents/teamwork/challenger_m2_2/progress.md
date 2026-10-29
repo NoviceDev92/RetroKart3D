@@ -1,0 +1,24 @@
+# Progress — challenger_m2_2
+
+- Last visited: 2026-10-29T05:08:00Z
+- Status: Completed empirical challenges; findings verified; preparing reports
+- Tasks:
+  - [x] Record dispatch and initialize BRIEFING.md / progress.md
+  - [x] Read ORIGINAL_REQUEST.md, PROJECT.md, and worker_m2/handoff.md
+  - [x] Inspect codebase changes (game_canvas.h, game_canvas.cpp, sprite_atlas.h, sprite_atlas.cpp)
+  - [x] Build verification with Qt/MinGW: `mingw32-make -f Makefile.Release` clean pass
+  - [x] Run existing tests: 182/182 passed in test_runner.exe
+  - [x] Design and execute empirical stress test suite (`test_m2_empirical_challenger.exe`):
+    - [x] 3D billboard projection transform & frustum clipping (PASSED)
+    - [x] Painter's algorithm depth-sorting (PASSED)
+    - [x] 60 FPS performance benchmark: 0.224 - 0.600 ms/frame (> 1,600 FPS) (PASSED)
+    - [x] Pathological coordinates buffer safety: -1e7 to +1e7 (PASSED)
+    - [x] Adversarial Green Shell launch, wall bounce reflection, 3-bounce shattering, AI impact (PASSED)
+    - [x] Adversarial Banana drop, 1.2s owner immunity, trailing rival spinout, single consumption (PASSED)
+    - [x] Ink Blooper player clean windshield & opponent targeting (PASSED)
+    - [x] AI terrain mask road-as-lava bug discovery & reproduction (FAILED - BUG-M2-01)
+    - [x] AI spinout freeze of inkTimer decay discovery & reproduction (FAILED - BUG-M2-02)
+    - [x] AI active navigation stalling at 0 waypoints discovery & reproduction (FAILED - BUG-M2-01)
+  - [x] Compile Challenge Report (`challenge_report.md`)
+  - [x] Write 5-component handoff report (`handoff.md`)
+  - [ ] Send verdict to orchestrator via `send_message`

@@ -27,7 +27,25 @@ enum class SpriteType {
 
     // Dropped items on track
     BANANA_DROPPED,     // Banana sitting on the road
-    SHELL_PROJECTILE    // Moving shell
+    SHELL_PROJECTILE,   // Moving shell
+
+    // Milestone 1 Kart Billboard Sprites
+    KART_MARIO,         // Mario kart (red chassis, white M, blue overalls)
+    KART_BOWSER,        // Bowser kart (green spiked shell, horns, heavy wheels)
+    KART_PEACH,         // Peach kart (pink chassis, crown, blonde hair)
+    KART_TOAD,          // Toad kart (blue chassis, mushroom cap)
+
+    // Alternate Palettes (Multiplayer Duplicate Support)
+    KART_MARIO_ALT,     // Fire Mario (white chassis, red overalls)
+    KART_BOWSER_ALT,    // Dry Bowser (charcoal shell, red spikes)
+    KART_PEACH_ALT,     // Daisy variant (orange chassis, brown hair)
+    KART_TOAD_ALT,      // Yellow Toad (yellow chassis, yellow cap)
+
+    // Track Hazards (Milestone 3)
+    LAVA_GEYSER_BUBBLING,   // Dormant & warning bubbling lava pool
+    LAVA_GEYSER_ERUPTING,   // Towering fire/plasma column
+    CHOCOLATE_FOUNTAIN,     // Bubbling chocolate mud fountain
+    CHOCOLATE_CANDY         // Giant rolling striped chocolate bonbon
 };
 
 class SpriteAtlas
@@ -58,6 +76,19 @@ private:
     void generateCoin();
     void generateBananaDropped();
     void generateShellProjectile();
+
+    // Kart generator routines
+    void generateKartMario();
+    void generateKartBowser();
+    void generateKartPeach();
+    void generateKartToad();
+    void generateKartAlts();
+
+    // Track Hazard generator routines (Milestone 3)
+    void generateLavaGeyserBubbling();
+    void generateLavaGeyserErupting();
+    void generateChocolateFountain();
+    void generateChocolateCandy();
 
     // Helper: set pixel with bounds check
     void setPixel(QImage& img, int x, int y, QRgb color);

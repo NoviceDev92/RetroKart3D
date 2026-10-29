@@ -1,0 +1,19 @@
+QT += core gui widgets testlib
+
+CONFIG += c++17 console
+CONFIG -= app_bundle
+
+TARGET = standalone_m1_stress
+TEMPLATE = app
+
+INCLUDEPATH += .. .
+
+SOURCES += \
+    standalone_m1_stress.cpp \
+    ../game_canvas.cpp \
+    ../sprite_atlas.cpp
+
+HEADERS += \
+    ../game_canvas.h \
+    ../sprite_atlas.h
+
