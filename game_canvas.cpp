@@ -27,6 +27,8 @@ GameCanvas::GameCanvas(QWidget *parent)
     generateDonutPlains();
     currentState = GameState::TITLE_MENU;
 
+    initNetworkManager();
+
     connect(&gameTimer, &QTimer::timeout, this, &GameCanvas::updateGameLoop);
     gameTimer.start(16); // ~60 FPS
     frameTimer.start();
@@ -140,6 +142,7 @@ void GameCanvas::setTrackLevel(TrackLevel level)
 
 void GameCanvas::startRace()
 {
+    isNetworkRace = false;
     if (characters.empty()) {
         initCharacters();
     }
@@ -371,6 +374,10 @@ void GameCanvas::keyPressEvent(QKeyEvent *event)
         handleCharacterSelectInput(key);
         break;
 
+    case GameState::MULTIPLAYER_LOBBY:
+        handleMultiplayerLobbyInput(event);
+        break;
+
     case GameState::RACING:
     case GameState::RACE_FINISHED:
         handleRacingInput(key);
@@ -409,13 +416,18 @@ void GameCanvas::confirmTitleMenuSelection()
 {
     if (menuIndex == 0) {
         selectedGameMode = GameMode::PLAY_VS_AI;
+        charSelectPhase = 0;
+        setGameState(GameState::CHARACTER_SELECT);
     } else if (menuIndex == 1) {
         selectedGameMode = GameMode::MULTIPLAYER;
+        initNetworkManager();
+        multiLobbyState = MultiLobbyState::MODE_CHOICE;
+        setGameState(GameState::MULTIPLAYER_LOBBY);
     } else {
         selectedGameMode = GameMode::PRACTICE;
+        charSelectPhase = 0;
+        setGameState(GameState::CHARACTER_SELECT);
     }
-    charSelectPhase = 0;
-    setGameState(GameState::CHARACTER_SELECT);
 }
 
 void GameCanvas::handleCharacterSelectInput(int key)
@@ -483,6 +495,19 @@ void GameCanvas::handleCharacterSelectInput(int key)
 void GameCanvas::handleRacingInput(int key)
 {
     if (currentState == GameState::RACE_FINISHED) {
+        if (isNetworkRace) {
+            if (key == Qt::Key_R && networkManager && networkManager->isHost()) {
+                networkManager->returnToLobby();
+                return;
+            } else if (key == Qt::Key_Escape) {
+                if (networkManager) networkManager->disconnectNetwork();
+                isNetworkRace = false;
+                setGameState(GameState::TITLE_MENU);
+                return;
+            }
+            return;
+        }
+
         if (key == Qt::Key_Return || key == Qt::Key_Enter || key == Qt::Key_Space || key == Qt::Key_Escape) {
             setGameState(GameState::TITLE_MENU);
             return;
@@ -852,9 +877,25 @@ void GameCanvas::updateGameLoop()
         emit statsUpdated(0.0, 0, 0.0, 0.0, 0.0, "MENU: CHARACTER SELECT");
         break;
 
+    case GameState::MULTIPLAYER_LOBBY:
+        renderMultiplayerLobby();
+        emit statsUpdated(0.0, 0, 0.0, 0.0, 0.0, "MENU: LAN MULTIPLAYER");
+        break;
+
     case GameState::RACING:
         updatePhysics(dt);
-        if (selectedGameMode == GameMode::PLAY_VS_AI) {
+        if (isNetworkRace) {
+            updateRemoteKarts(dt);
+            raceElapsedTime += dt;
+            networkSyncTimer += dt;
+            if (networkSyncTimer >= 0.033 && networkManager) {
+                networkSyncTimer = 0.0;
+                networkManager->broadcastLocalKartState(
+                    kartX, kartZ, kartAngle, kartSpeed, currentLap,
+                    isRaceFinished, (isRaceFinished ? raceElapsedTime : 0.0),
+                    isSpinning, isDrifting, static_cast<int>(heldItem));
+            }
+        } else if (selectedGameMode == GameMode::PLAY_VS_AI) {
             updateAIOpponents(dt);
         }
         updateItemSystem(dt);
@@ -879,7 +920,17 @@ void GameCanvas::updateGameLoop()
 
     case GameState::RACE_FINISHED:
         updatePhysics(dt);
-        if (selectedGameMode == GameMode::PLAY_VS_AI) {
+        if (isNetworkRace) {
+            updateRemoteKarts(dt);
+            networkSyncTimer += dt;
+            if (networkSyncTimer >= 0.033 && networkManager) {
+                networkSyncTimer = 0.0;
+                networkManager->broadcastLocalKartState(
+                    kartX, kartZ, kartAngle, kartSpeed, currentLap,
+                    true, raceElapsedTime,
+                    isSpinning, isDrifting, static_cast<int>(heldItem));
+            }
+        } else if (selectedGameMode == GameMode::PLAY_VS_AI) {
             updateAIOpponents(dt);
         }
         updateTrackHazards(dt);
@@ -897,7 +948,11 @@ void GameCanvas::updateGameLoop()
         if (isCelebrationActive) {
             renderCelebration();
         }
-        renderRaceFinishedOverlay();
+        if (isNetworkRace) {
+            renderMultiplayerRankings();
+        } else {
+            renderRaceFinishedOverlay();
+        }
 
         emit statsUpdated(kartSpeed, currentLap, kartX, kartZ, kartAngle * (180.0 / M_PI), "🏆 RACE FINISHED!");
         break;
@@ -1151,7 +1206,12 @@ void GameCanvas::updatePhysics(double dt)
                 currentLap = 3;
                 isRaceFinished = true;
                 currentState = GameState::RACE_FINISHED;
-                triggerCelebration("🏁 1ST PLACE - VICTORY! 🏁", "COURSE CLEAR! PRESS [R] TO REPLAY");
+                if (isNetworkRace && networkManager) {
+                    networkManager->notifyLocalFinish(raceElapsedTime);
+                    triggerCelebration("🏁 RACE FINISHED! 🏁", "CHECKING RANKINGS...");
+                } else {
+                    triggerCelebration("🏁 1ST PLACE - VICTORY! 🏁", "COURSE CLEAR! PRESS [R] TO REPLAY");
+                }
             }
         }
     }
@@ -1600,6 +1660,9 @@ void GameCanvas::useHeldItem()
         double bx = kartX - std::cos(kartAngle) * dropDist;
         double bz = kartZ - std::sin(kartAngle) * dropDist;
         worldSprites.push_back({ bx, bz, 0.0, SpriteType::BANANA_DROPPED, true, 0.0, 0, 1.2 });
+        if (isNetworkRace && networkManager) {
+            networkManager->sendItemEvent(static_cast<int>(SpriteType::BANANA_DROPPED), bx, bz, kartAngle);
+        }
         break;
     }
 
@@ -1619,6 +1682,9 @@ void GameCanvas::useHeldItem()
         shell.lifeTime = 6.0;
         shell.bouncesLeft = 3;
         activeProjectiles.push_back(shell);
+        if (isNetworkRace && networkManager) {
+            networkManager->sendItemEvent(static_cast<int>(SpriteType::SHELL_PROJECTILE), fx, fz, kartAngle);
+        }
         break;
     }
 
@@ -1635,6 +1701,9 @@ void GameCanvas::useHeldItem()
             player2.isInked = true;
             player2.inkTimer = 4.0;
             player2.speed *= 0.65;
+        }
+        if (isNetworkRace && networkManager) {
+            networkManager->sendItemEvent(static_cast<int>(SpriteType::INK_BLOOPER), kartX, kartZ, kartAngle);
         }
         flashIntensity = 0.35;
         break;
@@ -1764,10 +1833,11 @@ void GameCanvas::renderSprites()
         SpriteType type;
         bool isPickup;
         int groundScreenY;
+        QString name = "";
     };
 
     std::vector<ProjectedSprite> renderList;
-    renderList.reserve(worldSprites.size() + aiOpponents.size() + activeProjectiles.size() + 4);
+    renderList.reserve(worldSprites.size() + aiOpponents.size() + remoteKarts.size() + activeProjectiles.size() + 4);
 
     double cosA = std::cos(kartAngle);
     double sinA = std::sin(kartAngle);
@@ -1801,11 +1871,40 @@ void GameCanvas::renderSprites()
 
         if (drawW <= 1 || drawH <= 1) continue;
 
-        renderList.push_back({ sx, sy, drawW, drawH, camZ, sprite.type, isPickup, groundY });
+        renderList.push_back({ sx, sy, drawW, drawH, camZ, sprite.type, isPickup, groundY, "" });
     }
 
-    // 2. Project Active AI Opponent Fleet Billboards
-    if (selectedGameMode == GameMode::PLAY_VS_AI) {
+    // 2. Project Active AI Opponents or Remote Network Karts
+    if (isNetworkRace) {
+        for (const auto &rk : remoteKarts) {
+            double dx = rk.x - kartX;
+            double dz = rk.z - kartZ;
+
+            double camX = -dx * sinA + dz * cosA;
+            double camZ =  dx * cosA + dz * sinA;
+
+            if (camZ <= 5.0 || camZ > 480.0) continue;
+
+            int sx = static_cast<int>((BUFFER_WIDTH / 2) + (focalLength * camX) / camZ);
+            int groundY = static_cast<int>(HORIZON_Y + (focalLength * cameraHeight) / camZ);
+            if (groundY <= HORIZON_Y) continue;
+
+            double scale = focalLength / camZ;
+            double baseSize = (rk.characterId == 1) ? 25.0 : 22.0;
+            int drawW = static_cast<int>(baseSize * scale);
+            int drawH = static_cast<int>(baseSize * scale);
+
+            if (drawW <= 2 || drawH <= 2) continue;
+            drawW = std::min(180, drawW);
+            drawH = std::min(180, drawH);
+
+            if (sx + drawW / 2 < 0 || sx - drawW / 2 >= BUFFER_WIDTH) continue;
+
+            bool isAlt = (rk.characterId == getSelectedCharacterP1().id);
+            SpriteType kartSprite = getKartSpriteType(rk.characterId, isAlt);
+            renderList.push_back({ sx, groundY, drawW, drawH, camZ, kartSprite, false, groundY, rk.name });
+        }
+    } else if (selectedGameMode == GameMode::PLAY_VS_AI) {
         for (const auto &ai : aiOpponents) {
             double dx = ai.x - kartX;
             double dz = ai.z - kartZ;
@@ -1831,7 +1930,7 @@ void GameCanvas::renderSprites()
             if (sx + drawW / 2 < 0 || sx - drawW / 2 >= BUFFER_WIDTH) continue;
 
             SpriteType kartSprite = getKartSpriteType(ai.characterId);
-            renderList.push_back({ sx, groundY, drawW, drawH, camZ, kartSprite, false, groundY });
+            renderList.push_back({ sx, groundY, drawW, drawH, camZ, kartSprite, false, groundY, "" });
         }
     }
 
@@ -1963,6 +2062,23 @@ void GameCanvas::renderSprites()
         // Draw textured billboard
         const QImage &texture = atlas.getSprite(item.type);
         drawTexturedBillboard(item.screenX, item.screenY, item.drawW, item.drawH, texture);
+
+        if (!item.name.isEmpty()) {
+            QPainter tagPainter(&screenBuffer);
+            QFont tagFont("Arial", 5, QFont::Bold);
+            tagPainter.setFont(tagFont);
+            int tagW = std::clamp(item.drawW + 10, 32, 80);
+            int tagH = 10;
+            int tagX = item.screenX - tagW / 2;
+            int tagY = item.screenY - item.drawH - 11;
+            if (tagY >= 0 && tagX >= 0 && tagX + tagW < BUFFER_WIDTH) {
+                tagPainter.fillRect(QRect(tagX, tagY, tagW, tagH), QColor(10, 16, 28, 200));
+                tagPainter.setPen(QPen(QColor(0, 229, 255), 1));
+                tagPainter.drawRect(QRect(tagX, tagY, tagW, tagH));
+                tagPainter.setPen(Qt::white);
+                tagPainter.drawText(QRect(tagX, tagY, tagW, tagH), Qt::AlignCenter, item.name);
+            }
+        }
     }
 }
 
@@ -2475,7 +2591,7 @@ void GameCanvas::renderTitleMenu()
     // Menu Items
     const char* menuOptions[3] = {
         "1. PLAY VS AI (GRAND PRIX)",
-        "2. MULTIPLAYER (2P)",
+        "2. MULTIPLAYER (LAN)",
         "3. PRACTICE (TIME TRIAL)"
     };
 
@@ -2987,8 +3103,15 @@ void GameCanvas::renderMinimap()
         painter.drawImage(rx, ry, minimapTrackCache);
     }
 
-    // 5. AI Opponent Blips (Rendered beneath Player 1)
-    if (selectedGameMode == GameMode::PLAY_VS_AI) {
+    // 5. Remote / AI Opponent Blips (Rendered beneath Player 1)
+    if (isNetworkRace) {
+        for (const auto &rk : remoteKarts) {
+            QPointF rkPos = MinimapHUD::worldToRadar(rk.x, rk.z);
+            painter.setPen(QPen(QColor(10, 10, 15, 220), 1.0));
+            painter.setBrush(rk.kartColor);
+            painter.drawEllipse(rkPos, 2.5, 2.5);
+        }
+    } else if (selectedGameMode == GameMode::PLAY_VS_AI) {
         for (const auto &ai : aiOpponents) {
             QPointF blipPos = MinimapHUD::worldToRadar(ai.x, ai.z);
 
@@ -3048,4 +3171,980 @@ void GameCanvas::renderMinimap()
     painter.drawLine(rx + size, ry + size, rx + size - 4, ry + size);
     painter.drawLine(rx + size, ry + size, rx + size, ry + size - 4);
 }
+
+// -------------------------------------------------------------
+// LAN MULTIPLAYER SYSTEM & LOBBY
+// -------------------------------------------------------------
+
+QString GameCanvas::generateSecretCode()
+{
+    const QStringList codePool = {
+        "KART1", "KART7", "TURBO", "RACE9", "FAST4",
+        "DRIFT", "PIPES", "COINS", "SUPER", "SPEED",
+        "BOOST", "STAR3", "SHELL", "TRACK", "APEX8",
+        "RETRO", "NITRO", "FLASH", "GRAND", "CHAMP"
+    };
+    int idx = QRandomGenerator::global()->bounded(codePool.size());
+    return codePool[idx];
+}
+
+void GameCanvas::initNetworkManager()
+{
+    if (networkManager) return;
+
+    networkManager = new NetworkManager(this);
+
+    connect(networkManager, &NetworkManager::statusChanged, this, [this](const QString &) {
+        update();
+    });
+
+    connect(networkManager, &NetworkManager::lobbyUpdated, this, [this]() {
+        if (currentState == GameState::MULTIPLAYER_LOBBY) {
+            if (networkManager->getRole() == NetworkRole::CLIENT &&
+                networkManager->isConnected() &&
+                multiLobbyState == MultiLobbyState::JOIN_INPUT) {
+                multiLobbyState = MultiLobbyState::WAITING_ROOM;
+            }
+        }
+        update();
+    });
+
+    connect(networkManager, &NetworkManager::raceStartTriggered, this, [this](int trackLevel) {
+        startMultiplayerRace(trackLevel);
+    });
+
+    connect(networkManager, &NetworkManager::remoteKartUpdated, this, [this](int playerId) {
+        const NetPlayer *np = networkManager->getPlayer(playerId);
+        if (!np) return;
+
+        for (auto &rk : remoteKarts) {
+            if (rk.id == playerId) {
+                rk.x = np->x;
+                rk.z = np->z;
+                rk.angle = np->angle;
+                rk.speed = np->speed;
+                rk.currentLap = np->currentLap;
+                rk.isSpinning = np->isSpinning;
+                rk.isDrifting = np->isDrifting;
+                rk.raceFinished = np->raceFinished;
+                rk.finishTime = np->finishTime;
+                rk.characterId = np->characterId;
+                if (np->characterId >= 0 && np->characterId < static_cast<int>(characters.size())) {
+                    rk.kartColor = characters[np->characterId].primaryColor;
+                }
+                break;
+            }
+        }
+        update();
+    });
+
+    connect(networkManager, &NetworkManager::remoteItemTriggered, this, [this](int senderId, int itemType, double x, double z, double angle) {
+        SpriteType st = static_cast<SpriteType>(itemType);
+        if (st == SpriteType::BANANA_DROPPED) {
+            worldSprites.push_back({ x, z, 0.0, SpriteType::BANANA_DROPPED, true, 0.0, senderId, 1.2 });
+        } else if (st == SpriteType::SHELL_PROJECTILE) {
+            Projectile shell;
+            shell.x = x;
+            shell.z = z;
+            shell.vx = std::cos(angle) * 200.0;
+            shell.vz = std::sin(angle) * 200.0;
+            shell.ownerId = senderId;
+            shell.active = true;
+            shell.lifeTime = 6.0;
+            shell.bouncesLeft = 3;
+            activeProjectiles.push_back(shell);
+        } else if (st == SpriteType::INK_BLOOPER) {
+            if (senderId != networkManager->getLocalPlayerId()) {
+                inkTimer = 4.0;
+                flashIntensity = 0.35;
+            }
+        }
+        update();
+    });
+
+    connect(networkManager, &NetworkManager::remotePlayerFinished, this, [this](int playerId, double finishTime, int placement) {
+        for (auto &rk : remoteKarts) {
+            if (rk.id == playerId) {
+                rk.raceFinished = true;
+                rk.finishTime = finishTime;
+                rk.placement = placement;
+                break;
+            }
+        }
+        update();
+    });
+
+    connect(networkManager, &NetworkManager::allPlayersFinished, this, [this]() {
+        if (currentState == GameState::RACING) {
+            isRaceFinished = true;
+            currentState = GameState::RACE_FINISHED;
+            triggerCelebration("🏁 ALL RACERS FINISHED! 🏁", "RACE COMPLETE!");
+        }
+        update();
+    });
+
+    connect(networkManager, &NetworkManager::returnedToLobby, this, [this]() {
+        isNetworkRace = false;
+        currentState = GameState::MULTIPLAYER_LOBBY;
+        multiLobbyState = MultiLobbyState::WAITING_ROOM;
+        update();
+    });
+
+    connect(networkManager, &NetworkManager::connectionLost, this, [this](const QString &) {
+        if (isNetworkRace) {
+            isNetworkRace = false;
+            currentState = GameState::TITLE_MENU;
+        } else if (currentState == GameState::MULTIPLAYER_LOBBY) {
+            multiLobbyState = MultiLobbyState::MODE_CHOICE;
+        }
+        update();
+    });
+}
+
+void GameCanvas::startMultiplayerRace(int trackLevel)
+{
+    if (characters.empty()) {
+        initCharacters();
+    }
+    pressedKeys.clear();
+    isNetworkRace = true;
+
+    setTrackLevel(static_cast<TrackLevel>(trackLevel));
+
+    int myId = networkManager ? networkManager->getLocalPlayerId() : 0;
+    const NetPlayer *myNetPlayer = networkManager ? networkManager->getPlayer(myId) : nullptr;
+    int myCharId = myNetPlayer ? myNetPlayer->characterId : selectedCharP1;
+    selectedCharP1 = myCharId;
+
+    const CharacterDef &p1 = getSelectedCharacterP1();
+    this->maxSpeed = p1.maxSpeed;
+    this->accel = p1.accel;
+    this->brakeDecel = 240.0;
+    this->turnRate = p1.turnRate;
+    this->driftFactor = p1.driftFactor;
+    this->weight = p1.weight;
+
+    isDrifting = false;
+    driftTimer = 0.0;
+    miniTurboTimer = 0.0;
+    driftHopTimer = 0.0;
+    driftHopHeight = 0.0;
+    lateralSlipAngle = 0.0;
+    driftDirection = 0;
+    driftSparks.clear();
+
+    int mySlot = 0;
+    if (networkManager) {
+        const auto &pList = networkManager->getPlayers();
+        for (size_t i = 0; i < pList.size(); ++i) {
+            if (pList[i].id == myId) {
+                mySlot = static_cast<int>(i);
+                break;
+            }
+        }
+    }
+
+    double baseZ = (currentLevel == TrackLevel::BOWSER_CASTLE) ? 250.0 : 200.0;
+    kartX = 470.0 - mySlot * 18.0;
+    kartZ = baseZ + ((mySlot % 2 == 0) ? -6.0 : +6.0);
+    kartAngle = 0.0;
+    kartSpeed = 0.0;
+    steeringVisualAngle = 0.0;
+    currentLap = 1;
+    nextCheckpoint = 1;
+    hasPassedHalfway = false;
+    firstStartCrossed = false;
+    raceElapsedTime = 0.0;
+    networkSyncTimer = 0.0;
+
+    player1.id = myId;
+    player1.isHuman = true;
+    player1.characterId = p1.id;
+    player1.name = myNetPlayer ? myNetPlayer->name : p1.name;
+    player1.kartColor = p1.primaryColor;
+    player1.x = kartX;
+    player1.z = kartZ;
+    player1.angle = kartAngle;
+    player1.speed = kartSpeed;
+    player1.currentLap = 1;
+    player1.nextCheckpoint = 1;
+    player1.hasPassedHalfway = false;
+    player1.firstStartCrossed = false;
+    player1.raceFinished = false;
+    player1.totalRaceDistance = 0.0;
+    player1.finishTime = 0.0;
+
+    remoteKarts.clear();
+    aiOpponents.clear();
+
+    if (networkManager) {
+        const auto &pList = networkManager->getPlayers();
+        for (size_t i = 0; i < pList.size(); ++i) {
+            const auto &np = pList[i];
+            if (np.id == myId) continue;
+
+            KartEntity rk;
+            rk.id = np.id;
+            rk.isHuman = true;
+            rk.isAI = false;
+            rk.characterId = np.characterId;
+            rk.name = np.name;
+            if (np.characterId >= 0 && np.characterId < static_cast<int>(characters.size())) {
+                const auto &cDef = characters[np.characterId];
+                rk.kartColor = (np.characterId == myCharId) ? cDef.altColor : cDef.primaryColor;
+                rk.maxSpeed = cDef.maxSpeed;
+                rk.accel = cDef.accel;
+                rk.turnRate = cDef.turnRate;
+            }
+            int slot = static_cast<int>(i);
+            rk.x = 470.0 - slot * 18.0;
+            rk.z = baseZ + ((slot % 2 == 0) ? -6.0 : +6.0);
+            rk.angle = 0.0;
+            rk.speed = 0.0;
+            rk.currentLap = 1;
+            rk.raceFinished = false;
+            rk.finishTime = 0.0;
+            remoteKarts.push_back(rk);
+        }
+    }
+
+    heldItem = PlayerItem::NONE;
+    isRouletteActive = false;
+    rouletteTimer = 0.0;
+    mushroomBoostTimer = 0.0;
+    isSpinning = false;
+    spinTimer = 0.0;
+    inkTimer = 0.0;
+
+    isCelebrationActive = false;
+    isRaceFinished = false;
+    celebrationTimer = 0.0;
+    flashIntensity = 0.0;
+    confetti.clear();
+
+    activeProjectiles.clear();
+
+    currentState = GameState::RACING;
+    pressedKeys.clear();
+    triggerCelebration("★ RACE START! ★", "GO GO GO!");
+    update();
+}
+
+void GameCanvas::updateRemoteKarts(double dt)
+{
+    for (auto &rk : remoteKarts) {
+        if (rk.raceFinished) {
+            rk.speed = std::max(0.0, rk.speed - 55.0 * dt);
+        }
+        if (rk.isSpinning) {
+            rk.angle += 12.0 * dt;
+        }
+        rk.x += rk.speed * std::cos(rk.angle) * dt;
+        rk.z += rk.speed * std::sin(rk.angle) * dt;
+
+        while (rk.x < 0.0) rk.x += 1024.0;
+        while (rk.x >= 1024.0) rk.x -= 1024.0;
+        while (rk.z < 0.0) rk.z += 1024.0;
+        while (rk.z >= 1024.0) rk.z -= 1024.0;
+    }
+}
+
+void GameCanvas::renderMultiplayerLobby()
+{
+    QPainter painter(&screenBuffer);
+    painter.setRenderHint(QPainter::Antialiasing, false);
+
+    // Midnight sky & ground
+    QLinearGradient skyGrad(0, 0, 0, HORIZON_Y);
+    skyGrad.setColorAt(0.0, QColor(6, 10, 24));
+    skyGrad.setColorAt(1.0, QColor(22, 32, 56));
+    painter.fillRect(QRect(0, 0, BUFFER_WIDTH, HORIZON_Y), skyGrad);
+
+    QLinearGradient groundGrad(0, HORIZON_Y, 0, BUFFER_HEIGHT);
+    groundGrad.setColorAt(0.0, QColor(16, 8, 28));
+    groundGrad.setColorAt(1.0, QColor(36, 14, 48));
+    painter.fillRect(QRect(0, HORIZON_Y, BUFFER_WIDTH, BUFFER_HEIGHT - HORIZON_Y), groundGrad);
+
+    // Perspective Grid
+    painter.setPen(QColor(0, 229, 255, 50));
+    for (int i = 0; i < 14; ++i) {
+        int groundX = -100 + i * 46;
+        painter.drawLine(BUFFER_WIDTH / 2, HORIZON_Y, groundX, BUFFER_HEIGHT);
+    }
+    double gridScroll = std::fmod(globalTime * 40.0, 16.0);
+    for (int y = HORIZON_Y; y < BUFFER_HEIGHT; y += 12) {
+        int lineY = y + static_cast<int>(gridScroll);
+        if (lineY > HORIZON_Y && lineY < BUFFER_HEIGHT) {
+            int alpha = std::min(100, static_cast<int>((lineY - HORIZON_Y) * 0.8));
+            painter.setPen(QColor(0, 229, 255, alpha));
+            painter.drawLine(0, lineY, BUFFER_WIDTH, lineY);
+        }
+    }
+
+    // Top checkered banner
+    int checkSize = 8;
+    double bannerOffset = std::fmod(globalTime * 20.0, static_cast<double>(checkSize * 2));
+    for (int x = -checkSize * 2; x < BUFFER_WIDTH + checkSize * 2; x += checkSize) {
+        int bx = static_cast<int>(x + bannerOffset);
+        bool even = ((x / checkSize) % 2 == 0);
+        painter.fillRect(QRect(bx, 0, checkSize, 5), even ? QColor(255, 215, 0) : QColor(20, 20, 24));
+    }
+
+    if (multiLobbyState == MultiLobbyState::MODE_CHOICE) {
+        // Title
+        painter.setFont(QFont("Arial", 16, QFont::Black));
+        painter.setPen(QColor(10, 5, 20));
+        painter.drawText(QRect(2, 22, BUFFER_WIDTH, 28), Qt::AlignCenter, "LAN MULTIPLAYER");
+        painter.setPen(QColor(255, 220, 30));
+        painter.drawText(QRect(0, 20, BUFFER_WIDTH, 28), Qt::AlignCenter, "LAN MULTIPLAYER");
+
+        painter.setFont(QFont("Arial", 6, QFont::Bold));
+        painter.setPen(QColor(0, 229, 255));
+        painter.drawText(QRect(0, 48, BUFFER_WIDTH, 12), Qt::AlignCenter, "★ PLAY WITH DEVICES ON THE SAME LOCAL NETWORK / WI-FI ★");
+
+        // Options Box
+        int boxX = 65;
+        int boxY = 75;
+        int boxW = 270;
+        int boxH = 125;
+        painter.fillRect(QRect(boxX, boxY, boxW, boxH), QColor(14, 18, 32, 240));
+        painter.setPen(QPen(QColor(255, 215, 0), 2));
+        painter.drawRoundedRect(QRect(boxX, boxY, boxW, boxH), 6, 6);
+
+        painter.setFont(QFont("Arial", 7, QFont::Bold));
+        painter.setPen(QColor(255, 215, 0));
+        painter.drawText(QRect(boxX, boxY + 8, boxW, 14), Qt::AlignCenter, "— CHOOSE MULTIPLAYER ACTION —");
+
+        const char* choices[2] = {
+            "1. HOST A RACE (GET SECRET CODE)",
+            "2. JOIN A RACE (ENTER SECRET CODE)"
+        };
+
+        int itemY = boxY + 34;
+        int chevronOffset = static_cast<int>(3.0 * std::sin(globalTime * 8.0));
+
+        for (int i = 0; i < 2; ++i) {
+            bool isSelected = (multiChoiceIndex == i);
+            int yPos = itemY + i * 36;
+
+            if (isSelected) {
+                int alpha = static_cast<int>(50 + 25 * std::sin(globalTime * 8.0));
+                painter.fillRect(QRect(boxX + 12, yPos - 4, boxW - 24, 28), QColor(255, 215, 0, alpha));
+                painter.setPen(QPen(QColor(255, 215, 0), 1));
+                painter.drawRect(QRect(boxX + 12, yPos - 4, boxW - 24, 28));
+
+                painter.setFont(QFont("Arial", 8, QFont::Bold));
+                painter.setPen(QColor(255, 225, 30));
+                painter.drawText(QRect(boxX + 16 + chevronOffset, yPos + 3, 20, 16), Qt::AlignLeft | Qt::AlignVCenter, "▶▶");
+                painter.drawText(QRect(boxX + boxW - 36 - chevronOffset, yPos + 3, 20, 16), Qt::AlignRight | Qt::AlignVCenter, "◀◀");
+
+                painter.setFont(QFont("Arial", 8, QFont::Bold));
+                painter.setPen(Qt::white);
+                painter.drawText(QRect(boxX + 38, yPos + 3, boxW - 76, 16), Qt::AlignCenter, choices[i]);
+            } else {
+                painter.setFont(QFont("Arial", 8, QFont::Bold));
+                painter.setPen(QColor(150, 165, 185));
+                painter.drawText(QRect(boxX + 20, yPos + 3, boxW - 40, 16), Qt::AlignCenter, choices[i]);
+            }
+        }
+
+        // Footer Hint
+        QRect hintRect(35, 225, 330, 42);
+        painter.fillRect(hintRect, QColor(16, 20, 32, 220));
+        painter.setPen(QPen(QColor(50, 60, 80), 1));
+        painter.drawRoundedRect(hintRect, 6, 6);
+
+        painter.setFont(QFont("Arial", 6, QFont::Bold));
+        painter.setPen(QColor(255, 215, 0));
+        painter.drawText(QRect(35, 230, 330, 14), Qt::AlignCenter, "▲/▼ or W/S: NAVIGATE  •  ENTER / SPACE: SELECT");
+        painter.setPen(QColor(0, 229, 255));
+        painter.drawText(QRect(35, 246, 330, 14), Qt::AlignCenter, "PRESS [1] OR [2] FOR INSTANT PICK  •  [ESC] MAIN MENU");
+    }
+    else if (multiLobbyState == MultiLobbyState::HOST_SETUP) {
+        // Title
+        painter.setFont(QFont("Arial", 11, QFont::Bold));
+        painter.setPen(QColor(255, 220, 30));
+        painter.drawText(QRect(0, 14, BUFFER_WIDTH, 18), Qt::AlignCenter, "★ MULTIPLAYER LOBBY (HOST) ★");
+
+        // Big Secret Code Card
+        QRect codeCard(25, 36, BUFFER_WIDTH - 50, 56);
+        painter.fillRect(codeCard, QColor(18, 24, 44, 245));
+        painter.setPen(QPen(QColor(255, 215, 0), 2));
+        painter.drawRoundedRect(codeCard, 6, 6);
+
+        painter.setFont(QFont("Arial", 6, QFont::Bold));
+        painter.setPen(QColor(0, 229, 255));
+        painter.drawText(QRect(25, 40, BUFFER_WIDTH - 50, 12), Qt::AlignCenter, "— GROUP SECRET CODE —");
+
+        // Code in huge font
+        QFont codeFont("Courier New", 18, QFont::Black);
+        codeFont.setBold(true);
+        painter.setFont(codeFont);
+        painter.setPen(QColor(255, 225, 30));
+        painter.drawText(QRect(25, 52, BUFFER_WIDTH - 50, 24), Qt::AlignCenter, currentSecretCode);
+
+        painter.setFont(QFont("Arial", 5, QFont::Normal));
+        painter.setPen(QColor(200, 215, 235));
+        painter.drawText(QRect(25, 77, BUFFER_WIDTH - 50, 11), Qt::AlignCenter,
+                         QString("TELL FRIENDS TO ENTER THIS CODE  •  HOST IP: %1").arg(networkManager ? networkManager->getLocalIP() : ""));
+
+        // Settings Row (Course & Character)
+        QRect settingsCard(25, 96, BUFFER_WIDTH - 50, 34);
+        painter.fillRect(settingsCard, QColor(16, 20, 36, 230));
+        painter.setPen(QPen(QColor(50, 65, 90), 1));
+        painter.drawRect(settingsCard);
+
+        QString trackName = (currentLevel == TrackLevel::DONUT_PLAINS) ? "DONUT PLAINS" :
+                            (currentLevel == TrackLevel::CHOCO_VALLEY) ? "CHOCO VALLEY" : "BOWSER CASTLE";
+        const auto &p1Char = getSelectedCharacterP1();
+
+        painter.setFont(QFont("Arial", 6, QFont::Bold));
+        painter.setPen(QColor(255, 215, 0));
+        painter.drawText(QRect(32, 100, 160, 12), Qt::AlignLeft, QString("COURSE: %1 [1-3]").arg(trackName));
+        painter.setPen(p1Char.secondaryColor);
+        painter.drawText(QRect(32, 114, 160, 12), Qt::AlignLeft, QString("YOUR RACER: %1 [A/D]").arg(p1Char.name));
+
+        painter.setFont(QFont("Arial", 6, QFont::Normal));
+        painter.setPen(QColor(160, 180, 210));
+        painter.drawText(QRect(195, 100, 170, 26), Qt::AlignRight | Qt::AlignVCenter, "KEYS 1, 2, 3: CHANGE COURSE\nA/D: CHANGE RACER");
+
+        // Racers Roster Box
+        QRect rosterCard(25, 134, BUFFER_WIDTH - 50, 78);
+        painter.fillRect(rosterCard, QColor(12, 16, 28, 235));
+        painter.setPen(QPen(QColor(60, 75, 105), 1));
+        painter.drawRect(rosterCard);
+
+        painter.setFont(QFont("Arial", 6, QFont::Bold));
+        painter.setPen(QColor(255, 215, 0));
+        int numP = networkManager ? static_cast<int>(networkManager->getPlayers().size()) : 1;
+        painter.drawText(QRect(32, 138, 200, 12), Qt::AlignLeft, QString("RACERS CONNECTED (%1/4):").arg(numP));
+
+        if (networkManager) {
+            const auto &pList = networkManager->getPlayers();
+            int rY = 153;
+            for (size_t i = 0; i < pList.size() && i < 4; ++i) {
+                const auto &p = pList[i];
+                QString pCharName = (p.characterId >= 0 && p.characterId < static_cast<int>(characters.size()))
+                                        ? characters[p.characterId].name : "MARIO";
+                painter.setFont(QFont("Arial", 6, QFont::Bold));
+                painter.setPen(p.isHost ? QColor(255, 215, 0) : Qt::white);
+                painter.drawText(QRect(35, rY, 120, 12), Qt::AlignLeft, QString("%1. %2 %3").arg(i + 1).arg(p.name).arg(p.isHost ? "(HOST)" : ""));
+
+                painter.setFont(QFont("Arial", 6, QFont::Normal));
+                painter.setPen(QColor(160, 185, 215));
+                painter.drawText(QRect(160, rY, 90, 12), Qt::AlignLeft, pCharName);
+
+                painter.setFont(QFont("Arial", 6, QFont::Bold));
+                if (p.isReady) {
+                    painter.setPen(QColor(80, 240, 120));
+                    painter.drawText(QRect(260, rY, 105, 12), Qt::AlignRight, "✓ READY");
+                } else {
+                    painter.setPen(QColor(255, 160, 40));
+                    painter.drawText(QRect(260, rY, 105, 12), Qt::AlignRight, "... SELECTING");
+                }
+                rY += 15;
+            }
+            if (pList.size() <= 1) {
+                painter.setFont(QFont("Arial", 6, QFont::Normal));
+                painter.setPen(QColor(0, 229, 255));
+                painter.drawText(QRect(32, 175, BUFFER_WIDTH - 64, 14), Qt::AlignCenter,
+                                 QString("WAITING FOR RACERS TO JOIN WITH SECRET CODE \"%1\"...").arg(currentSecretCode));
+            }
+        }
+
+        // Action Button
+        QRect btnRect(25, 218, BUFFER_WIDTH - 50, 36);
+        bool canStart = networkManager && networkManager->allPlayersReady();
+        if (canStart) {
+            int alpha = static_cast<int>(180 + 75 * std::sin(globalTime * 8.0));
+            painter.fillRect(btnRect, QColor(40, 160, 60, alpha));
+            painter.setPen(QPen(QColor(255, 215, 0), 2));
+            painter.drawRoundedRect(btnRect, 6, 6);
+
+            painter.setFont(QFont("Arial", 9, QFont::Bold));
+            painter.setPen(Qt::white);
+            painter.drawText(btnRect, Qt::AlignCenter, "▶▶ PRESS [ENTER] OR [SPACE] TO START RACE! ◀◀");
+        } else {
+            painter.fillRect(btnRect, QColor(24, 30, 46, 210));
+            painter.setPen(QPen(QColor(70, 80, 105), 1));
+            painter.drawRoundedRect(btnRect, 6, 6);
+
+            painter.setFont(QFont("Arial", 7, QFont::Bold));
+            painter.setPen(QColor(160, 175, 200));
+            painter.drawText(btnRect, Qt::AlignCenter, "WAITING FOR ALL RACERS TO BE READY...");
+        }
+
+        // Footer
+        painter.setFont(QFont("Arial", 6));
+        painter.setPen(QColor(140, 155, 180));
+        painter.drawText(QRect(0, 262, BUFFER_WIDTH, 14), Qt::AlignCenter,
+                         "KEYS 1-3: COURSE  •  A/D: RACER  •  [ESC] CLOSE LOBBY");
+    }
+    else if (multiLobbyState == MultiLobbyState::JOIN_INPUT) {
+        // Title
+        painter.setFont(QFont("Arial", 12, QFont::Bold));
+        painter.setPen(QColor(255, 220, 30));
+        painter.drawText(QRect(0, 16, BUFFER_WIDTH, 20), Qt::AlignCenter, "★ JOIN MULTIPLAYER RACE ★");
+
+        painter.setFont(QFont("Arial", 6, QFont::Bold));
+        painter.setPen(QColor(0, 229, 255));
+        painter.drawText(QRect(0, 38, BUFFER_WIDTH, 12), Qt::AlignCenter, "CONNECT TO A HOST OVER THE SAME WI-FI / LOCAL NETWORK");
+
+        // Input Card
+        QRect cardRect(35, 56, BUFFER_WIDTH - 70, 140);
+        painter.fillRect(cardRect, QColor(14, 18, 32, 240));
+        painter.setPen(QPen(QColor(255, 215, 0), 2));
+        painter.drawRoundedRect(cardRect, 6, 6);
+
+        // Field 0: Player Name
+        bool nameFocused = (activeInputField == 0);
+        QRect nameBox(55, 86, BUFFER_WIDTH - 110, 26);
+        painter.fillRect(nameBox, QColor(8, 12, 22));
+        painter.setPen(QPen(nameFocused ? QColor(255, 215, 0) : QColor(50, 65, 90), nameFocused ? 2 : 1));
+        painter.drawRect(nameBox);
+
+        painter.setFont(QFont("Arial", 6, QFont::Bold));
+        painter.setPen(nameFocused ? QColor(255, 215, 0) : QColor(160, 175, 200));
+        painter.drawText(QRect(55, 70, 200, 14), Qt::AlignLeft, "YOUR RACER NAME:");
+
+        painter.setFont(QFont("Arial", 9, QFont::Bold));
+        painter.setPen(Qt::white);
+        QString nameDisp = inputPlayerName + (nameFocused && std::fmod(globalTime * 2.0, 1.0) > 0.5 ? "_" : "");
+        painter.drawText(nameBox.adjusted(8, 0, -8, 0), Qt::AlignLeft | Qt::AlignVCenter, nameDisp);
+
+        // Field 1: Secret Code
+        bool codeFocused = (activeInputField == 1);
+        QRect codeBox(55, 138, BUFFER_WIDTH - 110, 28);
+        painter.fillRect(codeBox, QColor(8, 12, 22));
+        painter.setPen(QPen(codeFocused ? QColor(255, 215, 0) : QColor(50, 65, 90), codeFocused ? 2 : 1));
+        painter.drawRect(codeBox);
+
+        painter.setFont(QFont("Arial", 6, QFont::Bold));
+        painter.setPen(codeFocused ? QColor(255, 215, 0) : QColor(160, 175, 200));
+        painter.drawText(QRect(55, 122, 200, 14), Qt::AlignLeft, "GROUP SECRET CODE (FROM HOST SCREEN):");
+
+        QFont codeF("Courier New", 12, QFont::Bold);
+        painter.setFont(codeF);
+        painter.setPen(QColor(255, 225, 30));
+        QString codeDisp = inputSecretCode + (codeFocused && std::fmod(globalTime * 2.0, 1.0) > 0.5 ? "_" : "");
+        painter.drawText(codeBox.adjusted(8, 0, -8, 0), Qt::AlignLeft | Qt::AlignVCenter, codeDisp);
+
+        // Status Message Banner
+        QString stat = networkManager ? networkManager->getStatusMessage() : "";
+        if (stat.isEmpty()) stat = "TYPE SECRET CODE & PRESS [ENTER] TO SEARCH LAN";
+        painter.setFont(QFont("Arial", 6, QFont::Bold));
+        painter.setPen(stat.contains("FOUND") || stat.contains("CONNECTED") ? QColor(80, 240, 120) : QColor(0, 229, 255));
+        painter.drawText(QRect(20, 204, BUFFER_WIDTH - 40, 14), Qt::AlignCenter, stat);
+
+        // Action & Footer
+        QRect actionBox(35, 222, BUFFER_WIDTH - 70, 36);
+        painter.fillRect(actionBox, QColor(18, 24, 42, 220));
+        painter.setPen(QPen(QColor(255, 215, 0), 1));
+        painter.drawRoundedRect(actionBox, 4, 4);
+
+        painter.setFont(QFont("Arial", 7, QFont::Bold));
+        painter.setPen(QColor(255, 215, 0));
+        painter.drawText(QRect(35, 226, BUFFER_WIDTH - 70, 14), Qt::AlignCenter, "PRESS [ENTER] TO JOIN  •  [TAB] SWITCH FIELD");
+        painter.setFont(QFont("Arial", 6));
+        painter.setPen(QColor(160, 180, 210));
+        painter.drawText(QRect(35, 240, BUFFER_WIDTH - 70, 14), Qt::AlignCenter, "PRESS [ESC] TO CANCEL");
+    }
+    else if (multiLobbyState == MultiLobbyState::WAITING_ROOM) {
+        // Connected Client Waiting Room
+        painter.setFont(QFont("Arial", 11, QFont::Bold));
+        painter.setPen(QColor(255, 220, 30));
+        painter.drawText(QRect(0, 14, BUFFER_WIDTH, 18), Qt::AlignCenter, "★ MULTIPLAYER LOBBY ★");
+
+        // Info Card
+        QRect infoCard(25, 36, BUFFER_WIDTH - 50, 40);
+        painter.fillRect(infoCard, QColor(18, 24, 44, 245));
+        painter.setPen(QPen(QColor(255, 215, 0), 2));
+        painter.drawRoundedRect(infoCard, 6, 6);
+
+        QString trackName = (currentLevel == TrackLevel::DONUT_PLAINS) ? "DONUT PLAINS" :
+                            (currentLevel == TrackLevel::CHOCO_VALLEY) ? "CHOCO VALLEY" : "BOWSER CASTLE";
+        painter.setFont(QFont("Arial", 7, QFont::Bold));
+        painter.setPen(QColor(0, 229, 255));
+        painter.drawText(QRect(35, 42, 160, 14), Qt::AlignLeft, QString("SECRET CODE: %1").arg(networkManager ? networkManager->getSecretCode() : ""));
+        painter.setPen(QColor(255, 215, 0));
+        painter.drawText(QRect(35, 58, 160, 14), Qt::AlignLeft, QString("COURSE: %1").arg(trackName));
+
+        // Connected Racers Box
+        QRect rosterBox(25, 82, BUFFER_WIDTH - 50, 84);
+        painter.fillRect(rosterBox, QColor(12, 16, 28, 235));
+        painter.setPen(QPen(QColor(60, 75, 105), 1));
+        painter.drawRect(rosterBox);
+
+        painter.setFont(QFont("Arial", 6, QFont::Bold));
+        painter.setPen(QColor(255, 215, 0));
+        painter.drawText(QRect(32, 86, 200, 12), Qt::AlignLeft, "RACERS IN LOBBY:");
+
+        int myLocalId = networkManager ? networkManager->getLocalPlayerId() : 1;
+        bool myReady = false;
+
+        if (networkManager) {
+            const auto &pList = networkManager->getPlayers();
+            int rY = 101;
+            for (size_t i = 0; i < pList.size() && i < 4; ++i) {
+                const auto &p = pList[i];
+                if (p.id == myLocalId) myReady = p.isReady;
+
+                QString pCharName = (p.characterId >= 0 && p.characterId < static_cast<int>(characters.size()))
+                                        ? characters[p.characterId].name : "MARIO";
+                painter.setFont(QFont("Arial", 6, QFont::Bold));
+                painter.setPen(p.id == myLocalId ? QColor(255, 225, 30) : Qt::white);
+                painter.drawText(QRect(35, rY, 130, 12), Qt::AlignLeft, QString("%1. %2 %3").arg(i + 1).arg(p.name).arg(p.id == myLocalId ? "(YOU)" : ""));
+
+                painter.setFont(QFont("Arial", 6, QFont::Normal));
+                painter.setPen(QColor(160, 185, 215));
+                painter.drawText(QRect(170, rY, 90, 12), Qt::AlignLeft, pCharName);
+
+                painter.setFont(QFont("Arial", 6, QFont::Bold));
+                if (p.isReady) {
+                    painter.setPen(QColor(80, 240, 120));
+                    painter.drawText(QRect(260, rY, 105, 12), Qt::AlignRight, "✓ READY");
+                } else {
+                    painter.setPen(QColor(255, 160, 40));
+                    painter.drawText(QRect(260, rY, 105, 12), Qt::AlignRight, "... SELECTING");
+                }
+                rY += 15;
+            }
+        }
+
+        // Selection Controls Card
+        QRect ctrlCard(25, 172, BUFFER_WIDTH - 50, 40);
+        painter.fillRect(ctrlCard, QColor(16, 22, 38, 240));
+        painter.setPen(QPen(QColor(50, 65, 95), 1));
+        painter.drawRect(ctrlCard);
+
+        const auto &p1Char = getSelectedCharacterP1();
+        painter.setFont(QFont("Arial", 6, QFont::Bold));
+        painter.setPen(p1Char.secondaryColor);
+        painter.drawText(QRect(32, 178, 170, 14), Qt::AlignLeft, QString("YOUR RACER: < %1 >").arg(p1Char.name));
+        painter.setFont(QFont("Arial", 5));
+        painter.setPen(QColor(150, 170, 200));
+        painter.drawText(QRect(32, 194, 170, 14), Qt::AlignLeft, "[◄ / ► or A / D] CHANGE RACER");
+
+        // Ready Button
+        QRect readyBtn(210, 176, 150, 32);
+        if (myReady) {
+            painter.fillRect(readyBtn, QColor(35, 150, 55));
+            painter.setPen(QPen(QColor(255, 255, 255), 1));
+            painter.drawRoundedRect(readyBtn, 4, 4);
+            painter.setFont(QFont("Arial", 7, QFont::Bold));
+            painter.setPen(Qt::white);
+            painter.drawText(readyBtn, Qt::AlignCenter, "✓ YOU ARE READY!\n[SPACE] CANCEL");
+        } else {
+            int glow = static_cast<int>(180 + 75 * std::sin(globalTime * 8.0));
+            painter.fillRect(readyBtn, QColor(220, 140, 20, glow));
+            painter.setPen(QPen(QColor(255, 215, 0), 1));
+            painter.drawRoundedRect(readyBtn, 4, 4);
+            painter.setFont(QFont("Arial", 7, QFont::Bold));
+            painter.setPen(Qt::white);
+            painter.drawText(readyBtn, Qt::AlignCenter, "PRESS [SPACE]\nTO READY UP!");
+        }
+
+        // Status Banner
+        QRect statusBox(25, 218, BUFFER_WIDTH - 50, 36);
+        painter.fillRect(statusBox, QColor(14, 18, 30, 220));
+        painter.setPen(QPen(QColor(255, 215, 0), 1));
+        painter.drawRoundedRect(statusBox, 4, 4);
+
+        painter.setFont(QFont("Arial", 7, QFont::Bold));
+        painter.setPen(QColor(0, 229, 255));
+        painter.drawText(statusBox, Qt::AlignCenter, "WAITING FOR HOST TO START THE RACE...");
+
+        // Footer
+        painter.setFont(QFont("Arial", 6));
+        painter.setPen(QColor(140, 155, 180));
+        painter.drawText(QRect(0, 262, BUFFER_WIDTH, 14), Qt::AlignCenter,
+                         "A/D: CHANGE RACER  •  [SPACE] READY  •  [ESC] LEAVE LOBBY");
+    }
+}
+
+void GameCanvas::renderMultiplayerRankings()
+{
+    QPainter painter(&screenBuffer);
+    painter.setRenderHint(QPainter::Antialiasing, false);
+
+    // Dark semi-transparent backdrop over the 3D track
+    painter.fillRect(QRect(15, 15, BUFFER_WIDTH - 30, BUFFER_HEIGHT - 30), QColor(10, 14, 26, 240));
+    painter.setPen(QPen(QColor(255, 215, 0), 2));
+    painter.drawRoundedRect(QRect(15, 15, BUFFER_WIDTH - 30, BUFFER_HEIGHT - 30), 6, 6);
+
+    // Inner gold border
+    painter.setPen(QPen(QColor(255, 215, 0, 80), 1));
+    painter.drawRoundedRect(QRect(18, 18, BUFFER_WIDTH - 36, BUFFER_HEIGHT - 36), 4, 4);
+
+    // Header Checkered Ribbon
+    int squareSize = 6;
+    for (int x = 20; x < BUFFER_WIDTH - 20; x += squareSize) {
+        bool isWhite = ((x / squareSize) % 2 == 0);
+        painter.fillRect(x, 22, squareSize, 5, isWhite ? QColor(255, 255, 255) : QColor(20, 20, 25));
+    }
+
+    // Title
+    QFont titleFont("Arial", 11, QFont::Bold);
+    painter.setFont(titleFont);
+    painter.setPen(QColor(0, 0, 0));
+    painter.drawText(QRect(21, 31, BUFFER_WIDTH - 40, 20), Qt::AlignCenter, "★ MULTIPLAYER RACE RESULTS ★");
+    painter.setPen(QColor(255, 220, 30));
+    painter.drawText(QRect(20, 30, BUFFER_WIDTH - 40, 20), Qt::AlignCenter, "★ MULTIPLAYER RACE RESULTS ★");
+
+    // Track name & Secret Code info
+    QString trackName = (currentLevel == TrackLevel::DONUT_PLAINS) ? "DONUT PLAINS" :
+                        (currentLevel == TrackLevel::CHOCO_VALLEY) ? "CHOCO VALLEY" : "BOWSER CASTLE";
+    QFont subFont("Arial", 6, QFont::Bold);
+    painter.setFont(subFont);
+    painter.setPen(QColor(0, 229, 255));
+    painter.drawText(QRect(20, 50, BUFFER_WIDTH - 40, 12), Qt::AlignCenter,
+                     QString("COURSE: %1  •  GROUP CODE: %2").arg(trackName, networkManager ? networkManager->getSecretCode() : ""));
+
+    // Table Header
+    int tableY = 66;
+    painter.fillRect(QRect(25, tableY, BUFFER_WIDTH - 50, 14), QColor(24, 32, 54));
+    painter.setPen(QColor(180, 195, 220));
+    painter.setFont(QFont("Arial", 6, QFont::Bold));
+    painter.drawText(QRect(30, tableY, 40, 14), Qt::AlignLeft | Qt::AlignVCenter, "POS");
+    painter.drawText(QRect(80, tableY, 110, 14), Qt::AlignLeft | Qt::AlignVCenter, "RACER");
+    painter.drawText(QRect(200, tableY, 70, 14), Qt::AlignLeft | Qt::AlignVCenter, "KART");
+    painter.drawText(QRect(280, tableY, 80, 14), Qt::AlignRight | Qt::AlignVCenter, "TIME");
+
+    // Gather and sort all players
+    struct ResultEntry {
+        int id;
+        QString name;
+        int characterId;
+        bool isLocal;
+        bool finished;
+        double time;
+        int placement;
+    };
+    std::vector<ResultEntry> results;
+
+    int myLocalId = networkManager ? networkManager->getLocalPlayerId() : 0;
+    if (networkManager) {
+        for (const auto &p : networkManager->getPlayers()) {
+            results.push_back({ p.id, p.name, p.characterId, (p.id == myLocalId), p.raceFinished, p.finishTime, p.placement });
+        }
+    } else {
+        results.push_back({ 0, "PLAYER 1", selectedCharP1, true, true, raceElapsedTime, 1 });
+    }
+
+    std::sort(results.begin(), results.end(), [](const ResultEntry &a, const ResultEntry &b) {
+        if (a.finished && b.finished) return a.time < b.time;
+        if (a.finished && !b.finished) return true;
+        if (!a.finished && b.finished) return false;
+        return a.id < b.id;
+    });
+
+    int rowY = tableY + 16;
+    for (size_t i = 0; i < results.size() && i < 6; ++i) {
+        const auto &res = results[i];
+        int pos = static_cast<int>(i + 1);
+
+        if (res.isLocal) {
+            painter.fillRect(QRect(25, rowY - 1, BUFFER_WIDTH - 50, 19), QColor(255, 215, 0, 35));
+            painter.setPen(QPen(QColor(255, 215, 0, 120), 1));
+            painter.drawRect(QRect(25, rowY - 1, BUFFER_WIDTH - 50, 19));
+        } else {
+            painter.fillRect(QRect(25, rowY - 1, BUFFER_WIDTH - 50, 19), QColor(16, 20, 34, 180));
+        }
+
+        QColor medalColor;
+        QString posText;
+        if (pos == 1) { medalColor = QColor(255, 215, 0); posText = "1ST 👑"; }
+        else if (pos == 2) { medalColor = QColor(200, 210, 225); posText = "2ND"; }
+        else if (pos == 3) { medalColor = QColor(205, 127, 50); posText = "3RD"; }
+        else { medalColor = QColor(140, 155, 180); posText = QString("%1TH").arg(pos); }
+
+        painter.setFont(QFont("Arial", 7, QFont::Bold));
+        painter.setPen(medalColor);
+        painter.drawText(QRect(30, rowY, 45, 17), Qt::AlignLeft | Qt::AlignVCenter, posText);
+
+        QString displayName = res.name;
+        if (res.isLocal) displayName += " (YOU)";
+        painter.setFont(QFont("Arial", 7, QFont::Bold));
+        painter.setPen(res.isLocal ? QColor(255, 235, 60) : Qt::white);
+        painter.drawText(QRect(80, rowY, 110, 17), Qt::AlignLeft | Qt::AlignVCenter, displayName);
+
+        QString charName = "MARIO";
+        if (res.characterId >= 0 && res.characterId < static_cast<int>(characters.size())) {
+            charName = characters[res.characterId].name;
+        }
+        painter.setFont(QFont("Arial", 6, QFont::Normal));
+        painter.setPen(QColor(160, 180, 210));
+        painter.drawText(QRect(200, rowY, 70, 17), Qt::AlignLeft | Qt::AlignVCenter, charName);
+
+        QString timeStr;
+        if (res.finished) {
+            int mins = static_cast<int>(res.time) / 60;
+            double secs = std::fmod(res.time, 60.0);
+            timeStr = QString("%1:%2").arg(mins).arg(secs, 5, 'f', 2, QChar('0'));
+            painter.setPen(QColor(80, 240, 120));
+        } else {
+            timeStr = "RACING...";
+            painter.setPen(QColor(255, 180, 50));
+        }
+        painter.setFont(QFont("Courier New", 7, QFont::Bold));
+        painter.drawText(QRect(280, rowY, 80, 17), Qt::AlignRight | Qt::AlignVCenter, timeStr);
+
+        rowY += 21;
+    }
+
+    // Bottom Action Prompt
+    QRect promptRect(25, BUFFER_HEIGHT - 54, BUFFER_WIDTH - 50, 28);
+    painter.fillRect(promptRect, QColor(18, 24, 40, 230));
+    painter.setPen(QPen(QColor(60, 75, 105), 1));
+    painter.drawRoundedRect(promptRect, 4, 4);
+
+    bool isHost = (networkManager && networkManager->isHost());
+    painter.setFont(QFont("Arial", 6, QFont::Bold));
+    if (isHost) {
+        painter.setPen(QColor(255, 215, 0));
+        painter.drawText(QRect(25, BUFFER_HEIGHT - 52, BUFFER_WIDTH - 50, 12), Qt::AlignCenter,
+                         "[R] REMATCH (RETURN TO LOBBY)  •  [ESC] MAIN MENU");
+    } else {
+        painter.setPen(QColor(0, 229, 255));
+        painter.drawText(QRect(25, BUFFER_HEIGHT - 52, BUFFER_WIDTH - 50, 12), Qt::AlignCenter,
+                         "WAITING FOR HOST TO START REMATCH...  •  [ESC] LEAVE");
+    }
+    painter.setPen(QColor(140, 155, 180));
+    painter.drawText(QRect(25, BUFFER_HEIGHT - 38, BUFFER_WIDTH - 50, 12), Qt::AlignCenter,
+                     "PRESS R TO RETURN ALL RACERS TO LOBBY WITH CODE KEPT");
+}
+
+void GameCanvas::handleMultiplayerLobbyInput(QKeyEvent *event)
+{
+    int key = event->key();
+
+    if (multiLobbyState == MultiLobbyState::MODE_CHOICE) {
+        if (key == Qt::Key_Up || key == Qt::Key_W) {
+            multiChoiceIndex = (multiChoiceIndex - 1 + 2) % 2;
+            update();
+        } else if (key == Qt::Key_Down || key == Qt::Key_S) {
+            multiChoiceIndex = (multiChoiceIndex + 1) % 2;
+            update();
+        } else if (key == Qt::Key_1) {
+            multiChoiceIndex = 0;
+            currentSecretCode = generateSecretCode();
+            networkManager->startHosting(currentSecretCode, hostPlayerName, static_cast<int>(currentLevel));
+            multiLobbyState = MultiLobbyState::HOST_SETUP;
+            update();
+        } else if (key == Qt::Key_2) {
+            multiChoiceIndex = 1;
+            inputSecretCode.clear();
+            activeInputField = 1;
+            multiLobbyState = MultiLobbyState::JOIN_INPUT;
+            update();
+        } else if (key == Qt::Key_Return || key == Qt::Key_Enter || key == Qt::Key_Space) {
+            if (multiChoiceIndex == 0) {
+                currentSecretCode = generateSecretCode();
+                networkManager->startHosting(currentSecretCode, hostPlayerName, static_cast<int>(currentLevel));
+                multiLobbyState = MultiLobbyState::HOST_SETUP;
+            } else {
+                inputSecretCode.clear();
+                activeInputField = 1;
+                multiLobbyState = MultiLobbyState::JOIN_INPUT;
+            }
+            update();
+        } else if (key == Qt::Key_Escape) {
+            setGameState(GameState::TITLE_MENU);
+        }
+    }
+    else if (multiLobbyState == MultiLobbyState::HOST_SETUP) {
+        if (key == Qt::Key_1) {
+            setTrackLevel(TrackLevel::DONUT_PLAINS);
+            if (networkManager) networkManager->setTrackLevel(0);
+            update();
+        } else if (key == Qt::Key_2) {
+            setTrackLevel(TrackLevel::CHOCO_VALLEY);
+            if (networkManager) networkManager->setTrackLevel(1);
+            update();
+        } else if (key == Qt::Key_3) {
+            setTrackLevel(TrackLevel::BOWSER_CASTLE);
+            if (networkManager) networkManager->setTrackLevel(2);
+            update();
+        } else if (key == Qt::Key_Left || key == Qt::Key_A) {
+            selectedCharP1 = (selectedCharP1 - 1 + 4) % 4;
+            if (networkManager) networkManager->setCharacter(selectedCharP1);
+            update();
+        } else if (key == Qt::Key_Right || key == Qt::Key_D) {
+            selectedCharP1 = (selectedCharP1 + 1) % 4;
+            if (networkManager) networkManager->setCharacter(selectedCharP1);
+            update();
+        } else if (key == Qt::Key_Return || key == Qt::Key_Enter || key == Qt::Key_Space) {
+            if (networkManager && networkManager->allPlayersReady()) {
+                networkManager->startRace();
+            }
+        } else if (key == Qt::Key_Escape) {
+            if (networkManager) networkManager->disconnectNetwork();
+            multiLobbyState = MultiLobbyState::MODE_CHOICE;
+            update();
+        }
+    }
+    else if (multiLobbyState == MultiLobbyState::JOIN_INPUT) {
+        if (key == Qt::Key_Tab || key == Qt::Key_Up || key == Qt::Key_Down) {
+            activeInputField = (activeInputField == 0) ? 1 : 0;
+            update();
+        } else if (key == Qt::Key_Backspace) {
+            if (activeInputField == 0 && !inputPlayerName.isEmpty()) {
+                inputPlayerName.chop(1);
+                update();
+            } else if (activeInputField == 1 && !inputSecretCode.isEmpty()) {
+                inputSecretCode.chop(1);
+                update();
+            }
+        } else if (key == Qt::Key_Return || key == Qt::Key_Enter) {
+            if (!inputSecretCode.trimmed().isEmpty()) {
+                networkManager->startJoining(inputSecretCode.trimmed(), inputPlayerName.trimmed());
+                multiLobbyState = MultiLobbyState::WAITING_ROOM;
+                update();
+            }
+        } else if (key == Qt::Key_Escape) {
+            if (networkManager) networkManager->disconnectNetwork();
+            multiLobbyState = MultiLobbyState::MODE_CHOICE;
+            update();
+        } else {
+            QString txt = event->text();
+            for (QChar ch : txt) {
+                if (ch.isLetterOrNumber() || ch == ' ') {
+                    if (activeInputField == 0 && inputPlayerName.length() < 12) {
+                        inputPlayerName.append(ch);
+                        update();
+                    } else if (activeInputField == 1 && inputSecretCode.length() < 8) {
+                        if (ch.isLetterOrNumber()) {
+                            inputSecretCode.append(ch.toUpper());
+                            update();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    else if (multiLobbyState == MultiLobbyState::WAITING_ROOM) {
+        if (key == Qt::Key_Left || key == Qt::Key_A) {
+            selectedCharP1 = (selectedCharP1 - 1 + 4) % 4;
+            if (networkManager) networkManager->setCharacter(selectedCharP1);
+            update();
+        } else if (key == Qt::Key_Right || key == Qt::Key_D) {
+            selectedCharP1 = (selectedCharP1 + 1) % 4;
+            if (networkManager) networkManager->setCharacter(selectedCharP1);
+            update();
+        } else if (key == Qt::Key_Space) {
+            bool curReady = false;
+            if (networkManager) {
+                const NetPlayer *p = networkManager->getPlayer(networkManager->getLocalPlayerId());
+                if (p) curReady = p->isReady;
+                networkManager->setReady(!curReady);
+            }
+            update();
+        } else if (key == Qt::Key_Escape) {
+            if (networkManager) networkManager->disconnectNetwork();
+            multiLobbyState = MultiLobbyState::MODE_CHOICE;
+            update();
+        }
+    }
+}
+
 
