@@ -1,4 +1,4 @@
-QT       += core gui
+QT       += core gui network
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -8,12 +8,14 @@ SOURCES += \
     main.cpp \
     mainwindow.cpp \
     game_canvas.cpp \
-    sprite_atlas.cpp
+    sprite_atlas.cpp \
+    network_manager.cpp
 
 HEADERS += \
     mainwindow.h \
     game_canvas.h \
-    sprite_atlas.h
+    sprite_atlas.h \
+    network_manager.h
 
 FORMS += \
     mainwindow.ui

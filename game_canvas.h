@@ -12,12 +12,21 @@
 #include <set>
 #include <cmath>
 #include "sprite_atlas.h"
+#include "network_manager.h"
 
 enum class GameState {
     TITLE_MENU,         // Startup title screen and game mode selection
     CHARACTER_SELECT,   // Character roster selection with kart stats
     RACING,             // Active Mode-7 gameplay loop
-    RACE_FINISHED       // 3 laps complete or victory celebration with restart options
+    RACE_FINISHED,      // 3 laps complete or victory celebration with restart options
+    MULTIPLAYER_LOBBY   // LAN Multiplayer lobby and secret code joining
+};
+
+enum class MultiLobbyState {
+    MODE_CHOICE,    // 0: HOST LOBBY, 1: JOIN LOBBY
+    HOST_SETUP,     // Host lobby setup & waiting room
+    JOIN_INPUT,     // Input player name & secret code
+    WAITING_ROOM    // Client lobby waiting room
 };
 
 enum class GameMode {
@@ -104,6 +113,7 @@ struct KartEntity {
     bool raceFinished = false;
     int placement = 1;
     double totalRaceDistance = 0.0;
+    double finishTime = 0.0;
 };
 
 // Projectile contract for Milestone 2
@@ -194,8 +204,14 @@ public:
         return (trackIdx >= 0 && trackIdx < 3) ? trackWaypoints[trackIdx] : currentTrackWaypoints;
     }
     const std::vector<KartEntity>& getAIOpponents() const { return aiOpponents; }
+    const std::vector<KartEntity>& getRemoteKarts() const { return remoteKarts; }
     const std::vector<Projectile>& getActiveProjectiles() const { return activeProjectiles; }
     const std::vector<TrackHazard>& getTrackHazards() const { return trackHazards; }
+
+    NetworkManager* getNetworkManager() const { return networkManager; }
+    void startMultiplayerRace(int trackLevel);
+    MultiLobbyState getMultiLobbyState() const { return multiLobbyState; }
+    bool getIsNetworkRace() const { return isNetworkRace; }
 
 signals:
     void statsUpdated(double speed, int lap, double x, double z, double angle, QString surface);
@@ -367,12 +383,33 @@ private:
     void renderTitleMenu();
     void renderCharacterSelect();
     void renderRaceFinishedOverlay();
+    void renderMultiplayerLobby();
+    void renderMultiplayerRankings();
 
     // Input handlers
     void handleTitleMenuInput(int key);
     void handleCharacterSelectInput(int key);
     void handleRacingInput(int key);
+    void handleMultiplayerLobbyInput(QKeyEvent *event);
     void confirmTitleMenuSelection();
+
+    // LAN Multiplayer state & management
+    NetworkManager *networkManager = nullptr;
+    MultiLobbyState multiLobbyState = MultiLobbyState::MODE_CHOICE;
+    int multiChoiceIndex = 0;
+    QString inputSecretCode = "";
+    QString inputPlayerName = "PLAYER 2";
+    QString hostPlayerName = "HOST";
+    QString currentSecretCode = "KART7";
+    int activeInputField = 1; // 0: Name, 1: Code
+    bool isNetworkRace = false;
+    double raceElapsedTime = 0.0;
+    double networkSyncTimer = 0.0;
+    std::vector<KartEntity> remoteKarts;
+
+    void initNetworkManager();
+    void updateRemoteKarts(double dt);
+    QString generateSecretCode();
 
     // Texture-mapped sprite drawing
     void drawTexturedBillboard(int screenX, int screenY, int drawW, int drawH, const QImage& texture);
